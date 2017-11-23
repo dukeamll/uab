@@ -35,7 +35,7 @@ class uabAlgorithmRunNetwork(object):
         tf.set_random_seed(RANDOM_SEED)
         
         self.network = netw
-        self.modDir = uabUtilSubm.getBlockDir('network', self.network.model_name)
+        self.modDir = uabUtilSubm.getBlockDir('network', self.network.makeName())
         self.nEpochs = nEpochs
         self.batchSize = batchSize
         self.nTrain = n_train
