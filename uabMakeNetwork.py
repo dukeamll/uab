@@ -19,7 +19,8 @@ class uabNetArchis(object):
         self.nClasses = nClasses
         self.pred = []
         self.inputs = {}
-        self.model_name = []
+        self.model_name = custName
+        
         self.ckptDir = []
         self.pretDict = pretrainDict
         self.loss = []
@@ -27,7 +28,7 @@ class uabNetArchis(object):
         #load the network graph
         self.initGraph(toLoad=0)
             
-        self.makeName(custName)
+        self.makeName()
     
     def initGraph(self, toLoad=1):
         #initialize the graph & make the sizes etc.
@@ -55,7 +56,7 @@ class uabNetArchis(object):
         #function to be implemented in the subclass.  defines the network architecture
         raise NotImplementedError('Must be implemented by the subclass')
     
-    def makeName(self, custStr = ''):
+    def makeName(self):
         #naming function based on the network parameters
         if(self.isPretrained):
             if(self.isPretrained == 1):
@@ -65,9 +66,10 @@ class uabNetArchis(object):
         else:
             nm = ''
         
-        self.getName(custStr + nm)
+        compName = self.getName()
+        return compName + nm
         
-    def getName(self, custStr = ''):
+    def getName(self):
         raise NotImplementedError('Must be implemented by the subclass')
     
     def make_loss(self, y_name):
@@ -186,8 +188,8 @@ class uabNetArchis(object):
 #this class basically creates Bohao's unet 
 class uabNetUnetDeflt(uabNetArchis):
     def __init__(self, input_size, model_name='', nClasses=2, start_filter_num=32, ndims=3, pretrainDict = {}):
-        self.model_name = 'defUnet'
         self.snf = start_filter_num
+        self.model_name = 'defUnet'
         super(uabNetUnetDeflt, self).__init__(self.model_name + model_name, input_size, nClasses=nClasses, ndims=ndims, pretrainDict = pretrainDict)
         
     def makeGraph(self, X, y, mode):
@@ -211,14 +213,9 @@ class uabNetUnetDeflt(uabNetArchis):
 
         self.pred = tf.layers.conv2d(conv9, self.nClasses, (1, 1), name='final', activation=None, padding='same')
         
-    def getName(self, custName=''):
+    def getName(self):
         #naming here is mostly for backward compatibility
-        if(custName == ''):
-            return self.model_name
-        else:
-            self.model_name = custName
-            return custName
-            
+        return self.model_name
     
     def make_loss(self, y_name):
         with tf.variable_scope('loss'):
@@ -235,8 +232,8 @@ class uabNetUnetCrop(uabNetArchis):
     def __init__(self, input_size, model_name='', nClasses=2, start_filter_num=32, ndims=3, pretrainDict = {}):
         self.snf = start_filter_num
         self.model_name = 'cropUnet'
-        super(uabNetUnetCrop, self).__init__(model_name, input_size, nClasses=nClasses, ndims=ndims, pretrainDict = pretrainDict)           
-    
+        super(uabNetUnetCrop, self).__init__(self.model_name + model_name, input_size, nClasses=nClasses, ndims=ndims, pretrainDict = pretrainDict)           
+        
     def makeGraph(self, X, y, mode):
         sfn = self.snf
 
@@ -259,15 +256,8 @@ class uabNetUnetCrop(uabNetArchis):
 
         self.pred = tf.layers.conv2d(conv9, self.nClasses, (1, 1), name='final', activation=None, padding='same')
         
-    def getName(self, custName):
-
-        if(custName):
-            self.model_name = custName
-            nmstr = custName
-        else:
-            nmstr = self.model_name + '_sfn%d' % (self.snf)
-        
-        return nmstr
+    def getName(self):
+        return self.model_name + '_sfn%d' % (self.snf)
     
     def make_loss(self, y_name):
         with tf.variable_scope('loss'):
