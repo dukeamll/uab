@@ -91,7 +91,7 @@ class uabAlgorithmRunNetwork(object):
         self.summary = tf.summary.merge_all()
     
 
-    def trainCNNmodel(self, colObj, extrObj, cities='', TrTiles='', ValTiles='', verb_step=100, forceRun = 0, resumeTrain = 0):
+    def trainCNNmodel(self, colObj, extrObj, cities='', TrTiles='', ValTiles='', verb_step=100, forceRun = 0, resumeTrain = 0,trAug=''):
         #function to train a network.  assumes you've got a graph defined, images made
         #first checks if the checkpoint directory exists for this model, otherwise trains
         #resumeTrain is set if you want more epochs or something otherwise, checks if you wanted to pretrain otherwise goes from scratch.  Forcerun is if you want to overwrite results
@@ -111,7 +111,7 @@ class uabAlgorithmRunNetwork(object):
         tf.reset_default_graph()
         
         #get the iterators
-        _, trainIter = extrObj.makeDataReader(colObj, 1, self.batchSize, {'city':cities, 'tileInds':TrTiles})
+        _, trainIter = extrObj.makeDataReader(colObj, 1, self.batchSize, {'city':cities, 'tileInds':TrTiles},dataAug=trAug)
         _, validIter = extrObj.makeDataReader(colObj, 1, self.batchSize, {'city':cities, 'tileInds':ValTiles})
         
         #set up graph

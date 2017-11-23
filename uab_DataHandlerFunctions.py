@@ -143,13 +143,13 @@ class uabDataHandler(object):
 
         #return [[bNm+self.suff['dat'], bNm+self.suff['GT']] for bNm in cc]
     
-    def makeDataReader(self, colObj, isTraining, batch_size, subselectList={}):
+    def makeDataReader(self, colObj, isTraining, batch_size, subselectList={}, dataAug=''):
         #this is a necessary object to feed data into the network.  Can be used for training & validation
         #get the list of chips to feed into the network
         outList, metaArr = self.getChipsList(colObj, isTraining, subselectList)
         
         with tf.name_scope('image_loader'):
-            reader = uabDataReader.ImageLabelReader(outList, self.chipExtrSize, self.coord, metaArr)
+            reader = uabDataReader.ImageLabelReader(outList, self.chipExtrSize, self.coord, metaArr, dataAug=dataAug)
             batch_op_list = reader.dequeue(batch_size)
         
         return reader, batch_op_list

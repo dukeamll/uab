@@ -78,7 +78,7 @@ class ImageLabelReader(object):
             rldData = tf.image.resize_images(ldData, self.input_size)
             
             if dataAug:
-                augDat = uabUtilreader.doDataAug(rldData, dataAug)
+                augDat = uabUtilreader.doDataAug(rldData, self.listMeta[i], dataAug)
             else:
                 augDat = rldData
             
