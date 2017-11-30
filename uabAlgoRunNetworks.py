@@ -21,13 +21,14 @@ import tensorflow as tf
 import scipy.misc
 import uabUtilSubm
 from uabDataReader import ImageLabelReader
+import uabFuserPredictionMaps
 
 
 class uabAlgorithmRunNetwork(object):
     
     ckptName = 'checkPoint'
     
-    def __init__(self, netw, nEpochs = 15, batchSize = 10, n_train=8000, RANDOM_SEED = 1234, dec_rate=0.1, dec_step=10, learning_rate=1e-4, gpuDev = '0'):
+    def __init__(self, netw, nEpochs = 15, batchSize = 10, n_train=8000, RANDOM_SEED = 1234, dec_rate=0.1, dec_step=10, learning_rate=1e-4, gpuDev = '0', predictionMapFuser = uabFuserPredictionMaps.uabFusePredictionMaps()):
         # environment settings        
         os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
         os.environ['CUDA_VISIBLE_DEVICES'] = gpuDev
@@ -35,6 +36,8 @@ class uabAlgorithmRunNetwork(object):
         tf.set_random_seed(RANDOM_SEED)
         
         self.network = netw
+        self.combinePredictionMaps = predictionMapFuser
+            
         self.modDir = uabUtilSubm.getBlockDir('network', self.network.makeName())
         self.nEpochs = nEpochs
         self.batchSize = batchSize
@@ -183,7 +186,7 @@ class uabAlgorithmRunNetwork(object):
         
         return ckptName
     
-    def testCNNmodel(self, colObj, imFiles, ckptDir, INPUT_SIZE = np.array((0, 0)), forceRun = 0, isVal=0):
+    def testCNNmodel(self, colObj, imFiles, ckptDir, INPUT_SIZE = np.array((0, 0)), forceRun = 0, isVal=0, savePredictions=0):
         #function to run a saved CNN model.  This is expected to be a fixed process and therefore it is not being more systematized than this
         #takes in a model name, a checkpoint directory, a list of files to test on
         #
@@ -248,27 +251,18 @@ class uabAlgorithmRunNetwork(object):
                         patch_size=self.network.inpSize,
                         overlap=0, padding=padAmt)
                     
-                    """
-                    impath = colObj.getDataNameByTile(image_name, 'data')
-                    dsmpath = impath[:-7]
-                    dsmpath += 'DSM.tif'
-                    dtmpath = impath[:-7]
-                    dtmpath += 'DTM.tif'
-                    
-                    iterator_test = ImageLabelReader.image_height_label_iterator(
-                        [impath, dsmpath, dtmpath],
-                        batch_size=5,
-                        tile_dim=colObj.tileSize[:2],
-                        patch_size=INPUT_SIZE,
-                        overlap=184, padding=92, height_mode='subtract')
-                    """
                     # run
                     result = self.network.testNetworkOp(sess, iterator_test)
                     
-                    from sisRepo import utils
-                    image_pred = result[0,2:-2,2:-2,:]
-                    labels_pred = utils.get_pred_labels(image_pred)
-                    result = utils.make_output_file(labels_pred, {0:0, 1:255})
+                    #this may result in there being a larger output patch because of the padding.  Assumes that the center is the valid region & that it is symmetric otherwise error
+                    rShap = result.shape
+                    bdPad = (np.array(rShap[1:3]) - colObj.tileSize)/2
+                    if (bdPad % 1 != 0).any():
+                        raise NotImplementedError('The offset is not symmetric.  This is not handled')
+                    bdPad = bdPad.astype(np.int)
+                    image_pred = result[0,bdPad[0]:-bdPad[0],bdPad[1]:-bdPad[1],:]
+                    
+                    combPreds = self.combinePredictionMaps.combineMaps(image_pred)
                     
                     """
                     result = utils.get_output_label(result,
@@ -281,14 +275,16 @@ class uabAlgorithmRunNetwork(object):
                     u = image_name.split('/')
                     u1 = u[-1].split('_RGB.tif')
                     
-                    if(isVal):
+                    if(isVal == 1):
                         savePath = os.path.join(resPath,'val')
                         if not savePath:
                             os.makedirs(savePath)
                     else:
                         savePath = resPath
                     
-                    scipy.misc.imsave(os.path.join(savePath,u1[0]+'preds.png'), result)
+                    scipy.misc.imsave(os.path.join(savePath,u1[0]+'preds.png'), combPreds)
+                    if(savePredictions):
+                        scipy.misc.imsave(os.path.join(savePath,u1[0]+'cfs.png'), image_pred[:,:,1])
                     
                     
                     #get the image name & add something to it to show its the GT
