@@ -87,8 +87,16 @@ class uabCollection(object):
     def getResultsDir(self):
         return os.path.join(uabUtilSubm.parentDir, uabCollection.resPath)
     
+    def getDataExtensions(self):
+        #remove the ground truth extension and return all the rest
+        return [a for a in self.extensions.keys() if a != 'GT']
+    
     def loadTileData(self, tileName, ext):
-        return scipy.misc.imread(os.path.join(self.imDirectory, self.getDataNameByTile(tileName, ext)))
+        imNm = os.path.join(self.imDirectory, self.getDataNameByTile(tileName, ext))
+        if imNm[-3:] != 'npy':
+            return scipy.misc.imread(imNm)
+        else:
+            return np.load(imNm)
     
     def loadGTdata(self, tileName):
         return scipy.misc.imread(os.path.join(self.imDirectory, self.getDataNameByTile(tileName, 'GT')))

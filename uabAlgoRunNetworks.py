@@ -183,11 +183,13 @@ class uabAlgorithmRunNetwork(object):
         
         return ckptName
     
-    def testCNNmodel(self, colObj, imFiles, ckptDir, INPUT_SIZE = np.array((2048, 2048)), forceRun = 0):
+    def testCNNmodel(self, colObj, imFiles, ckptDir, INPUT_SIZE = np.array((0, 0)), forceRun = 0, isVal=0):
         #function to run a saved CNN model.  This is expected to be a fixed process and therefore it is not being more systematized than this
         #takes in a model name, a checkpoint directory, a list of files to test on
         #
         #it will typically always output files in the same place (outputLabels) but you can override that if necessary
+        #
+        #if input_size is different from zero, then use that size, otherwise just use the size of the tiles as the input
         
         
         print 'Start CNN testing'
@@ -195,7 +197,17 @@ class uabAlgorithmRunNetwork(object):
         tf.reset_default_graph()
         coord = tf.train.Coordinator()
         config = tf.ConfigProto()
-        self.network.inpSize = INPUT_SIZE
+        
+        #precompute the amount of padding required
+        if(INPUT_SIZE is not np.array((0,0))):
+            INPUT_SIZE = colObj.tileSize[:2]
+        
+        INPUT_SIZE = np.array(INPUT_SIZE)
+        valsz = self.network.getNextValidInputSize(INPUT_SIZE + self.network.getRequiredPadding())
+        padAmt = (valsz - INPUT_SIZE)/2
+        padAmt = padAmt.astype(np.int)
+        
+        self.network.inpSize = INPUT_SIZE + 2*padAmt
         self.network.initGraph(toLoad=0)
         #make results folder
         resPath = self.modDir
@@ -203,6 +215,11 @@ class uabAlgorithmRunNetwork(object):
         resFls = os.listdir(resPath)
         if(len(resFls) > 0 and forceRun == 0):
             return resPath
+        
+        #collection extensions
+        #exsts = colObj.getDataExtensions()
+        exsts = ['data', 'dif']
+        
         
         start_time = time.time()
         with tf.Session(config=config) as sess:
@@ -220,20 +237,64 @@ class uabAlgorithmRunNetwork(object):
             try:
                 for image_name in imFiles:
                     # load reader
-                    impath = colObj.getDataNameByTile(image_name, 'data')
+                    #get all the datafiles that this network runs on 
+                    impath = [colObj.getDataNameByTile(image_name, ext) for ext in exsts]
+
                     
                     iterator_test = ImageLabelReader.getTestIterator(
                         impath,
-                        batch_size=5,
+                        batch_size=1,
                         tile_dim=INPUT_SIZE,
+                        patch_size=self.network.inpSize,
+                        overlap=0, padding=padAmt)
+                    
+                    """
+                    impath = colObj.getDataNameByTile(image_name, 'data')
+                    dsmpath = impath[:-7]
+                    dsmpath += 'DSM.tif'
+                    dtmpath = impath[:-7]
+                    dtmpath += 'DTM.tif'
+                    
+                    iterator_test = ImageLabelReader.image_height_label_iterator(
+                        [impath, dsmpath, dtmpath],
+                        batch_size=5,
+                        tile_dim=colObj.tileSize[:2],
                         patch_size=INPUT_SIZE,
-                        overlap=0)
+                        overlap=184, padding=92, height_mode='subtract')
+                    """
                     # run
                     result = self.network.testNetworkOp(sess, iterator_test)
-                    #get the image name & add something to it to show its the GT
+                    
+                    from sisRepo import utils
+                    image_pred = result[0,2:-2,2:-2,:]
+                    labels_pred = utils.get_pred_labels(image_pred)
+                    result = utils.make_output_file(labels_pred, {0:0, 1:255})
+                    
+                    """
+                    result = utils.get_output_label(result,
+                                                  result.shape,
+                                                  INPUT_SIZE,
+                                                  {0:0, 1:255}, overlap=0,
+                                                  output_image_dim=INPUT_SIZE,
+                                                  output_patch_size=INPUT_SIZE)
+                    """
                     u = image_name.split('/')
                     u1 = u[-1].split('_RGB.tif')
-                    scipy.misc.imsave(os.path.join(resPath,u1[0]+'preds.png'), np.argmax(result[0,:,:,:],axis=2))
+                    
+                    if(isVal):
+                        savePath = os.path.join(resPath,'val')
+                        if not savePath:
+                            os.makedirs(savePath)
+                    else:
+                        savePath = resPath
+                    
+                    scipy.misc.imsave(os.path.join(savePath,u1[0]+'preds.png'), result)
+                    
+                    
+                    #get the image name & add something to it to show its the GT
+                    '''u = image_name.split('/')
+                    u1 = u[-1].split('_RGB.tif')
+                    scipy.misc.imsave(os.path.join(resPath,u1[0]+'preds.png'), np.argmax(result[0,:,:,:],axis=2))'''
                     
             finally:
                 coord.request_stop()

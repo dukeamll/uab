@@ -5,6 +5,10 @@ Created on Fri Nov 17 11:18:47 2017
 
 @author: Daniel
 Functions relating to submitting the testing
+
+import matplotlib.pyplot as plt
+plt.imshow(imOut)
+plt.show()
 """
 
 from __future__ import division
@@ -14,8 +18,9 @@ import scipy
 import scipy.misc
 from sys import platform
 import numpy as np
+import itertools
 
-
+postFix = 'preds.png'
 sl = os.path.sep
 
 if platform == 'win32':
@@ -28,13 +33,19 @@ outpDirs = {'network':'Algorithms', 'subm':'outputLabels'}
 
 def uabGetPreds(dirN):
     #get all the ground truth images for the network
-    return glob.glob(os.path.join(dirN, '*preds.png'))
+    rr = glob.glob(os.path.join(dirN, '*'+postFix))
+    print(len(rr))
+    return rr
 
 def uabConvertToRLE(imOut):
     #do connected components then do the run length encoding
     concomp = measure.label(imOut,connectivity=1)
     all_labels = concomp.flatten()
     
+    rleList = [(name, len(list(group))) for name, group in itertools.groupby(all_labels)]    
+    encFLat = [val for sublist in rleList for val in sublist]
+    return ','.join(map(str, encFLat))
+    """
     cnum = all_labels[0]
     runlength = 1
     encStr = []
@@ -53,7 +64,7 @@ def uabConvertToRLE(imOut):
             runlength = 1
        
     return ",".join(map(str, encStr))
-
+    """
 def makeSubmissionFile(blCol, fileDir, ModelName, outFile):
     #make submission file
     
@@ -69,7 +80,7 @@ def makeSubmissionFile(blCol, fileDir, ModelName, outFile):
         imOut = scipy.misc.imread(imn)
         shp = imOut.shape
         encStr = uabConvertToRLE(imOut)
-        nn = imn.split('/')[-1].split('preds.png')[0]
+        nn = imn.split('/')[-1].split(postFix)[0]
         text_file.write("%s\n%d,%d\n%s\n" % (nn,shp[0],shp[1],encStr))
         
     text_file.close()

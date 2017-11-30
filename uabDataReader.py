@@ -6,27 +6,76 @@ Created on Fri Nov 10 16:46:12 2017
 
 class that handles the reading and iterating over files to be compatible with tensorflow
 """
-
+from __future__ import division
 import scipy.misc
 import numpy as np
 import tensorflow as tf
-from sisRepo.dataReader import patch_extractor
 import uabUtilreader
 
-    
+
 #class to load all the possible slices of your data    
 class ImageLabelReader(object):
     
     @staticmethod
     def getTestIterator(image_dir, batch_size, tile_dim, patch_size, overlap, padding=0):
         # this is a iterator for test
-        block = scipy.misc.imread(image_dir)
+        block = []
+        nDims = 0
+        for file in image_dir:
+            if file[-3:] != 'npy':
+                img = scipy.misc.imread(file)
+            else:
+                img = np.load(file)
+            if len(img.shape) == 2:
+                img = np.expand_dims(img, axis=2)
+            nDims += img.shape[2]
+            block.append(img)
+        
+        block = np.dstack(block)
+        image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
+        
+        if (padding > 0).any():
+            block = uabUtilreader.pad_block(block, padding)
+            tile_dim = tile_dim + padding*2
+        cnt = 0
+        for patch in uabUtilreader.patchify(block, tile_dim, patch_size, overlap=overlap):
+            cnt += 1
+            image_batch[cnt-1, :, :, :] = patch
+            if cnt == batch_size:
+                cnt = 0
+                yield image_batch
+        # yield the last chunck
+        if cnt > 0:
+            yield image_batch[:cnt, :, :, :]
+            
+    @staticmethod
+    def image_height_label_iterator(image_dir, batch_size, tile_dim, patch_size, overlap, padding=0, height_mode='subtract'):
+    # this is a iterator for test
+        block = []
+        for file in image_dir:
+            if file[-3:] != 'npy':
+                img = scipy.misc.imread(file)
+            else:
+                img = np.load(file)
+            if len(img.shape) == 2:
+                img = np.expand_dims(img, axis=2)
+            block.append(img)
+        if height_mode == 'all':
+            block = np.dstack(block)
+            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 5))
+        elif height_mode == 'subtract':
+            block = np.dstack([block[0], block[1]-block[2]])
+            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 4))
+        else:
+            block = np.dstack([block[0], block[1], block[2], block[1]-block[2]])
+            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 6))
+    
         if padding > 0:
-            block = patch_extractor.pad_block(block, padding)
+            block = uabUtilreader.pad_block(block, padding)
             tile_dim = (tile_dim[0]+padding*2, tile_dim[1]+padding*2)
         cnt = 0
-        image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 3))
-        for patch in patch_extractor.patchify(block, tile_dim, patch_size, overlap=overlap):
+        patches = uabUtilreader.patchify(block, tile_dim, patch_size, overlap=overlap)
+        for patch in patches:
             cnt += 1
             image_batch[cnt-1, :, :, :] = patch
             if cnt == batch_size:
@@ -73,8 +122,9 @@ class ImageLabelReader(object):
             elif(self.listMeta[i][0] == 'png'):
                 ldData = tf.image.decode_png(qData, channels=self.listMeta[i][1])
                 if(len(self.listMeta[i]) == 3):
+                    #for GT files
                     ldData /= self.listMeta[i][2]
-            
+                
             rldData = tf.image.resize_images(ldData, self.input_size)
             
             if dataAug:
@@ -124,11 +174,11 @@ class ImageReaderHeightOps(ImageLabelReader):
             image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 6))
     
         if padding > 0:
-            block = patch_extractor.pad_block(block, padding)
+            block = uabUtilreader.pad_block(block, padding)
             tile_dim = (tile_dim[0]+padding*2, tile_dim[1]+padding*2)
         cnt = 0
         #image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 3))
-        for patch in patch_extractor.patchify(block, tile_dim, patch_size, overlap=overlap):
+        for patch in uabUtilreader.patchify(block, tile_dim, patch_size, overlap=overlap):
             cnt += 1
             image_batch[cnt-1, :, :, :] = patch
             if cnt == batch_size:

@@ -7,6 +7,7 @@ Created on Sat Nov 18 15:28:16 2017
 classes to handle network making.  This is where you'll make the custom architectures etc
 """
 
+from __future__ import division
 import tensorflow as tf
 import numpy as np
 
@@ -55,6 +56,14 @@ class uabNetArchis(object):
     def makeGraph(self, X, y, mode):
         #function to be implemented in the subclass.  defines the network architecture
         raise NotImplementedError('Must be implemented by the subclass')
+    
+    def getNextValidInputSize(self, sz):
+        #some network (e.g., cropping unet) can only accept inputs of particular sizes.  This function returns the next valid size.  Default is to return the same size (which assumes that any size is fine)
+        return sz
+    
+    def getRequiredPadding(self):
+        #based on the architecture, some cropping might occur and therefore we need to know how much padding may be required.  Default is 0
+        return 0
     
     def makeName(self):
         #naming function based on the network parameters
@@ -169,7 +178,7 @@ class uabNetArchis(object):
     def crop_upsample_concat(self, input_a, input_b, margin, name):
         with tf.variable_scope('crop_upsample_concat'):
             _, w, h, _ = input_b.get_shape().as_list()
-            input_b_crop = tf.image.resize_image_with_crop_or_pad(input_a, w-margin, h-margin)
+            input_b_crop = tf.image.resize_image_with_crop_or_pad(input_b, w-margin, h-margin)
             return self.upsample_concat(input_a, input_b_crop, name)
 
     def fc_fc(self, input_, n_filters, training, name, activation=tf.nn.relu, dropout=True):
@@ -269,3 +278,9 @@ class uabNetUnetCrop(uabNetArchis):
             gt = tf.gather(y_flat, indices)
             prediction = tf.gather(pred_flat, indices)
             self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
+    
+    def getNextValidInputSize(self, sz):
+        return 16*(np.ceil((sz - 124)/16))+124
+    
+    def getRequiredPadding(self):
+        return 92*2

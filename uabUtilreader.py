@@ -8,8 +8,9 @@ Created on Wed Nov 22 10:18:31 2017
 Useful functions for data readers.  Particularly, holds the functions for augmentation which should be accessed through doDataAug()
 """
 
+from __future__ import division
 import tensorflow as tf
-
+import numpy as np
 
 def block_flipping(block):
     return tf.image.random_flip_left_right(tf.image.random_flip_up_down(block))
@@ -52,4 +53,43 @@ def doDataAug(data, dataMeta, augType):
     if 'rotate' in augType:
         image = image_rotating(data, dataMeta[1])
     
+    return image
+
+def crop_image(block, size, corner):
+    return block[corner[0]:corner[0]+size[0],corner[1]:corner[1]+size[1],:]
+
+def patchify(block, tile_dim, patch_size, overlap=0):
+    max_h = tile_dim[0] - patch_size[0]
+    max_w = tile_dim[1] - patch_size[1]
+    h_step = np.ceil(tile_dim[0] / (patch_size[0] - overlap))
+    w_step = np.ceil(tile_dim[1] / (patch_size[1] - overlap))
+    patch_grid_h = np.floor(np.linspace(0, max_h, h_step)).astype(np.int32)
+    patch_grid_w = np.floor(np.linspace(0, max_w, w_step)).astype(np.int32)
+    for corner_h in patch_grid_h:
+        for corner_w in patch_grid_w:
+            yield crop_image(block, patch_size, (corner_h, corner_w))
+
+def pad_block(block, pad):
+    padded_block = []
+    _, _, c = block.shape
+    for i in range(c):
+        padded_block.append(np.pad(block[:, :, i],
+                                   (pad.astype(np.int), pad.astype(np.int)), 'symmetric'))
+    return np.dstack(padded_block)            
+
+def un_patchify(blocks, tile_dim, patch_size, overlap=0):
+    _, _, _, c = blocks.shape
+    image = np.zeros((tile_dim[0], tile_dim[1], c))
+    max_h = tile_dim[0] - patch_size[0]
+    max_w = tile_dim[1] - patch_size[1]
+    h_step = np.ceil(tile_dim[0] / (patch_size[0] - overlap))
+    w_step = np.ceil(tile_dim[1] / (patch_size[1] - overlap))
+    patch_grid_h = np.floor(np.linspace(0, max_h, h_step)).astype(np.int32)
+    patch_grid_w = np.floor(np.linspace(0, max_w, w_step)).astype(np.int32)
+
+    cnt = 0
+    for corner_h in patch_grid_h:
+        for corner_w in patch_grid_w:
+            cnt += 1
+            image[corner_h:corner_h+patch_size[0], corner_w:corner_w+patch_size[1], :] += blocks[cnt-1, :, :, :]
     return image
