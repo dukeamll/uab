@@ -163,6 +163,42 @@ class uabCollection(object):
             uabUtilSubm.read_or_new_pickle(os.path.join(resDir, fname), toSave=1,variable_to_save=cprops)
             
         return cprops
+    
+    
+class uabCollection_bh(uabCollection):
+    
+    #the directory names for data & results.  These are sub-directories to the collection name itself for now
+    dataPath = 'data'
+    resPath = 'Results'
+    instanceDir = 'collectionInfo'
+    
+    def __init__(self, colN, gtExt, dataExts):
+        #full path to data directory
+        self.colName = colN
+        self.imDirectory = os.path.join(uabUtilSubm.parentDir, uabCollection.dataPath)
+        #extensions to the data, assumes that the tile name is fixed but that the ground truth & the data have the same tile name.  gtExts -> just the extension for ground truth.  data extensions are their own dictionary to be supplied here
+        gtDict = {'GT': gtExt}
+        self.extensions = dataExts.copy()
+        self.extensions.update(gtDict)
+        
+        #list of the names of tiles for this collection
+        
+        #this is split by train and test because that's how the collection was organized but this can be overwritten later
+        self.tileTrList = self.getImLists('training')
+        self.tileTeList = self.getImLists('testing')
+        
+        #full list
+        self.tileList = self.tileTrList + self.tileTeList
+        
+        #get the directory where the by-instance information is saved for each tile
+        self.instanceMD = os.path.join(self.getResultsDir(), uabCollection.instanceDir)
+        self.tileSize = np.array([2048, 2048])
+        #kk = dataExts.keys()
+        #im = self.loadTileData(os.path.join('testingPadded', self.tileTrList[0]), kk[0])
+        #self.tileSize = im.shape
+        #self.colMean = self.computeTrainingMean()
+        #self.classProps = self.computeClassProportions()
+    
         
             
         

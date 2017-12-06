@@ -17,7 +17,7 @@ import uabUtilreader
 class ImageLabelReader(object):
     
     @staticmethod
-    def getTestIterator(image_dir, batch_size, tile_dim, patch_size, overlap, padding=0):
+    def getTestIterator(image_dir, batch_size, tile_dim, patch_size, overlap, padding=0, flip=None):
         # this is a iterator for test
         block = []
         nDims = 0
@@ -32,6 +32,13 @@ class ImageLabelReader(object):
             block.append(img)
         
         block = np.dstack(block)
+        
+        if flip is not None:
+            if flip < 2:
+                block = np.flip(block, axis=flip)
+            else:
+                block = np.rot90(block, k=flip-1)
+        
         image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
         
         if (padding > 0).any():

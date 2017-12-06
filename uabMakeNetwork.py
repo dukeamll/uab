@@ -135,6 +135,17 @@ class uabNetArchis(object):
             result.append(pred)
         result = np.vstack(result)
         return result
+    
+    def testNetworkOp_softmax(self, sess, test_iterator):
+        #convenience function to feed testing data to a network
+        result = []
+        for X_batch in test_iterator:
+            pred = sess.run(tf.nn.softmax(self.pred), 
+                            feed_dict={self.inputs['X']:X_batch,
+                                       self.inputs['mode']: False})
+            result.append(pred)
+        result = np.vstack(result)
+        return result
 
 ##################################    
 ## Useful functions for networks        
@@ -264,6 +275,55 @@ class uabNetUnetCrop(uabNetArchis):
         conv9 = self.conv_conv_pool(up9, [sfn, sfn], mode, name='up9', pool=False, padding='valid')
 
         self.pred = tf.layers.conv2d(conv9, self.nClasses, (1, 1), name='final', activation=None, padding='same')
+        
+    def getName(self):
+        return self.model_name + '_sfn%d' % (self.snf)
+    
+    def make_loss(self, y_name):
+        with tf.variable_scope('loss'):
+            pred_flat = tf.reshape(tf.nn.softmax(self.pred), [-1, self.nClasses])
+            _, w, h, _ = self.inputs[y_name].get_shape().as_list()
+            y = tf.image.resize_image_with_crop_or_pad(self.inputs[y_name], w-184, h-184)
+            y_flat = tf.reshape(tf.squeeze(y, axis=[3]), [-1, ])
+            indices = tf.squeeze(tf.where(tf.less_equal(y_flat, self.nClasses - 1)), 1)
+            gt = tf.gather(y_flat, indices)
+            prediction = tf.gather(pred_flat, indices)
+            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
+    
+    def getNextValidInputSize(self, sz):
+        return 16*(np.ceil((sz - 124)/16))+124
+    
+    def getRequiredPadding(self):
+        return 92*2
+    
+class uabNetUnetCrop_Appendix(uabNetArchis):
+    def __init__(self, input_size, model_name='', nClasses=2, start_filter_num=32, ndims=3, pretrainDict = {}):
+        self.snf = start_filter_num
+        self.model_name = 'cropUnet_Appendix_'
+        super(uabNetUnetCrop_Appendix, self).__init__(self.model_name + model_name, input_size, nClasses=nClasses, ndims=ndims, pretrainDict = pretrainDict)           
+        
+    def makeGraph(self, X, y, mode):
+        sfn = self.snf
+
+        # downsample
+        conv1, pool1 = self.conv_conv_pool(X, [sfn, sfn], mode, name='conv1', padding='valid')
+        conv2, pool2 = self.conv_conv_pool(pool1, [sfn*2, sfn*2], mode, name='conv2', padding='valid')
+        conv3, pool3 = self.conv_conv_pool(pool2, [sfn*4, sfn*4], mode, name='conv3', padding='valid')
+        conv4, pool4 = self.conv_conv_pool(pool3, [sfn*8, sfn*8], mode, name='conv4', padding='valid')
+        conv5 = self.conv_conv_pool(pool4, [sfn*16, sfn*16], mode, name='conv5', pool=False, padding='valid')
+
+        # upsample
+        up6 = self.crop_upsample_concat(conv5, conv4, 8, name='6')
+        conv6 = self.conv_conv_pool(up6, [sfn*8, sfn*8], mode, name='up6', pool=False, padding='valid')
+        up7 = self.crop_upsample_concat(conv6, conv3, 32, name='7')
+        conv7 = self.conv_conv_pool(up7, [sfn*4, sfn*4], mode, name='up7', pool=False, padding='valid')
+        up8 = self.crop_upsample_concat(conv7, conv2, 80, name='8')
+        conv8 = self.conv_conv_pool(up8, [sfn*2, sfn*2], mode, name='up8', pool=False, padding='valid')
+        up9 = self.crop_upsample_concat(conv8, conv1, 176, name='9')
+        conv9 = self.conv_conv_pool(up9, [sfn, sfn], mode, name='up9', pool=False, padding='valid')
+        
+        conv10 = tf.layers.conv2d(conv9, sfn, (1, 1), name='second_final', padding='same')
+        self.pred = tf.layers.conv2d(conv10, self.nClasses, (1, 1), name='final', activation=None, padding='same')
         
     def getName(self):
         return self.model_name + '_sfn%d' % (self.snf)

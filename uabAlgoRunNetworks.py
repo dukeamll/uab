@@ -277,14 +277,389 @@ class uabAlgorithmRunNetwork(object):
                     
                     if(isVal == 1):
                         savePath = os.path.join(resPath,'val')
-                        if not savePath:
+                        if not os.path.exists(savePath):
                             os.makedirs(savePath)
                     else:
                         savePath = resPath
                     
                     scipy.misc.imsave(os.path.join(savePath,u1[0]+'preds.png'), combPreds)
                     if(savePredictions):
-                        scipy.misc.imsave(os.path.join(savePath,u1[0]+'cfs.png'), image_pred[:,:,1])
+                        scipy.io.savemat(os.path.join(savePath,u1[0]+'cfs.mat'), mdict={'preds': image_pred[:,:,1]})
+                    
+                    
+                    #get the image name & add something to it to show its the GT
+                    '''u = image_name.split('/')
+                    u1 = u[-1].split('_RGB.tif')
+                    scipy.misc.imsave(os.path.join(resPath,u1[0]+'preds.png'), np.argmax(result[0,:,:,:],axis=2))'''
+                    
+            finally:
+                coord.request_stop()
+                coord.join(threads)
+        
+        duration = time.time() - start_time
+        print('duration {:.2f} minutes'.format(duration/60))
+        return resPath
+    
+    
+    def testCNNmodel_Nopad(self, colObj, imFiles, ckptDir, INPUT_SIZE = np.array((0, 0)), forceRun = 0, isVal=0, savePredictions=0):
+        #function to run a saved CNN model.  This is expected to be a fixed process and therefore it is not being more systematized than this
+        #takes in a model name, a checkpoint directory, a list of files to test on
+        #
+        #it will typically always output files in the same place (outputLabels) but you can override that if necessary
+        #
+        #if input_size is different from zero, then use that size, otherwise just use the size of the tiles as the input
+        
+        
+        print 'Start CNN testing'
+        # image reader
+        tf.reset_default_graph()
+        coord = tf.train.Coordinator()
+        config = tf.ConfigProto()
+        
+        #precompute the amount of padding required
+        #if(INPUT_SIZE is not np.array((0,0))):
+        if(INPUT_SIZE is np.array((0,0))):
+            INPUT_SIZE = colObj.tileSize[:2]
+        
+        INPUT_SIZE = np.array(INPUT_SIZE)
+        valsz = self.network.getNextValidInputSize(INPUT_SIZE + self.network.getRequiredPadding())
+        padAmt = (valsz - INPUT_SIZE)/2
+        padAmt = padAmt.astype(np.int)
+        
+        self.network.inpSize = INPUT_SIZE + 2*padAmt
+        self.network.initGraph(toLoad=0)
+        #make results folder
+        resPath = self.modDir
+        
+        resFls = os.listdir(resPath)
+        if(len(resFls) > 0 and forceRun == 0):
+            return resPath
+        
+        #collection extensions
+        #exsts = colObj.getDataExtensions()
+        exsts = ['data', 'dif']
+        
+        
+        start_time = time.time()
+        with tf.Session(config=config) as sess:
+            init = tf.global_variables_initializer()
+            sess.run(init)
+        
+            saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+        
+            if os.path.exists(ckptDir) and tf.train.get_checkpoint_state(ckptDir):
+                latest_check_point = tf.train.latest_checkpoint(ckptDir)
+                saver.restore(sess, latest_check_point)
+                print 'Load model from ' + latest_check_point
+        
+            threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+            try:
+                for image_name in imFiles:
+                    # load reader
+                    #get all the datafiles that this network runs on 
+                    impath = [colObj.getDataNameByTile(image_name, ext) for ext in exsts]
+
+                    
+                    '''iterator_test = ImageLabelReader.getTestIterator(
+                        impath,
+                        batch_size=1,
+                        tile_dim=np.array([2048, 2048]),
+                        patch_size=np.array([572, 572]),
+                        overlap=184, padding=padAmt)'''
+                    
+                    #from sisRepo import dataReader
+                    #from sisRepo.dataReader import image_height_label_iterator
+                    from sisRepo import dataReader
+                    from sisRepo.dataReader import image_reader
+                    iterator_test = image_reader.image_height_label_iterator(
+                            impath,
+                            batch_size=1,
+                            tile_dim=np.array([2048, 2048]),
+                            patch_size=np.array([572, 572]),
+                            overlap=184, padding=92, height_mode='all')
+                    
+                    # run
+                    result = self.network.testNetworkOp(sess, iterator_test)
+                    
+                    #this may result in there being a larger output patch because of the padding.  Assumes that the center is the valid region & that it is symmetric otherwise error
+                    '''rShap = result.shape
+                    bdPad = (np.array(rShap[1:3]) - colObj.tileSize)/2
+                    if (bdPad % 1 != 0).any():
+                        raise NotImplementedError('The offset is not symmetric.  This is not handled')
+                    bdPad = bdPad.astype(np.int)
+                    image_pred = result[0,bdPad[0]:-bdPad[0],bdPad[1]:-bdPad[1],:]
+                    
+                    combPreds = self.combinePredictionMaps.combineMaps(image_pred)'''
+                    
+                    
+                    from sisRepo import utils
+                    combPreds = utils.get_output_label(result,
+                                                  (2232, 2232),
+                                                  (572, 572),
+                                                  {0:0, 1:255}, overlap=184,
+                                                  output_image_dim=(2048, 2048),
+                                                  output_patch_size=(388, 388))
+                    
+                    u = image_name.split('/')
+                    u1 = u[-1].split('_RGB.tif')
+                    
+                    if(isVal == 1):
+                        savePath = os.path.join(resPath,'val')
+                        if not os.path.exists(savePath):
+                            os.makedirs(savePath)
+                    else:
+                        savePath = resPath
+                    
+                    scipy.misc.imsave(os.path.join(savePath,u1[0]+'preds.png'), combPreds)
+                    if(savePredictions):
+                        scipy.io.savemat(os.path.join(savePath,u1[0]+'cfs.mat'), mdict={'preds': image_pred[:,:,1]})
+                    
+                    
+                    #get the image name & add something to it to show its the GT
+                    '''u = image_name.split('/')
+                    u1 = u[-1].split('_RGB.tif')
+                    scipy.misc.imsave(os.path.join(resPath,u1[0]+'preds.png'), np.argmax(result[0,:,:,:],axis=2))'''
+                    
+            finally:
+                coord.request_stop()
+                coord.join(threads)
+        
+        duration = time.time() - start_time
+        print('duration {:.2f} minutes'.format(duration/60))
+        return resPath
+    
+class uabAlgorithmRunNetwork_Aug(uabAlgorithmRunNetwork):
+    def testCNNmodel(self, colObj, imFiles, ckptDir, INPUT_SIZE = np.array((0, 0)), forceRun = 0, isVal=0, savePredictions=0):
+        #function to run a saved CNN model.  This is expected to be a fixed process and therefore it is not being more systematized than this
+        #takes in a model name, a checkpoint directory, a list of files to test on
+        #
+        #it will typically always output files in the same place (outputLabels) but you can override that if necessary
+        #
+        #if input_size is different from zero, then use that size, otherwise just use the size of the tiles as the input
+        
+        
+        print 'Start CNN testing'
+        # image reader
+        tf.reset_default_graph()
+        coord = tf.train.Coordinator()
+        config = tf.ConfigProto()
+        
+        #precompute the amount of padding required
+        if((INPUT_SIZE == np.array((0,0))).all()):
+            INPUT_SIZE = colObj.tileSize[:2]
+        
+        INPUT_SIZE = np.array(INPUT_SIZE)
+        valsz = self.network.getNextValidInputSize(INPUT_SIZE + self.network.getRequiredPadding())
+        padAmt = (valsz - INPUT_SIZE)/2
+        padAmt = padAmt.astype(np.int)
+        
+        self.network.inpSize = INPUT_SIZE + 2*padAmt
+        self.network.initGraph(toLoad=0)
+        #make results folder
+        resPath = os.path.join(self.modDir, self.combinePredictionMaps.name)
+        
+        if(os.path.exists(resPath) and len(os.listdir(resPath)) > 0 and forceRun == 0):
+            return resPath
+        
+        #collection extensions
+        #exsts = colObj.getDataExtensions()
+        exsts = ['data', 'dif']
+        
+        
+        start_time = time.time()
+        with tf.Session(config=config) as sess:
+            init = tf.global_variables_initializer()
+            sess.run(init)
+        
+            saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+        
+            if os.path.exists(ckptDir) and tf.train.get_checkpoint_state(ckptDir):
+                latest_check_point = tf.train.latest_checkpoint(ckptDir)
+                saver.restore(sess, latest_check_point)
+                print 'Load model from ' + latest_check_point
+        
+            threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+            try:
+                for image_name in imFiles:
+                    # load reader
+                    #get all the datafiles that this network runs on 
+                    impath = [colObj.getDataNameByTile(image_name, ext) for ext in exsts]
+
+                    
+                    iterator_test = ImageLabelReader.getTestIterator(
+                        impath,
+                        batch_size=1,
+                        tile_dim=INPUT_SIZE,
+                        patch_size=self.network.inpSize,
+                        overlap=0, padding=padAmt)            
+                    # run
+                    result = []
+                    temp = self.network.testNetworkOp_softmax(sess, iterator_test)
+                    result.append(temp)
+                    
+                    iterator_test = ImageLabelReader.getTestIterator(
+                        impath,
+                        batch_size=1,
+                        tile_dim=INPUT_SIZE,
+                        patch_size=self.network.inpSize,
+                        overlap=0, padding=padAmt, flip=0)            
+                    # run
+                    
+                    result.append(np.flip(self.network.testNetworkOp_softmax(sess, iterator_test),axis=1))
+                    
+                    iterator_test = ImageLabelReader.getTestIterator(
+                        impath,
+                        batch_size=1,
+                        tile_dim=INPUT_SIZE,
+                        patch_size=self.network.inpSize,
+                        overlap=0, padding=padAmt, flip=1)            
+                    # run
+                    result.append(np.flip(self.network.testNetworkOp_softmax(sess, iterator_test),axis=2))
+                    
+                    for flip_cnt in range(3):
+                        iterator_test = ImageLabelReader.getTestIterator(
+                            impath,
+                            batch_size=1,
+                            tile_dim=INPUT_SIZE,
+                            patch_size=self.network.inpSize,
+                            overlap=0, padding=padAmt, flip=flip_cnt+2)            
+                        # run
+                        result.append(np.rot90(self.network.testNetworkOp_softmax(sess, iterator_test), axes=(1, 2), k=3-flip_cnt))
+                    
+                    
+                    #this may result in there being a larger output patch because of the padding.  Assumes that the center is the valid region & that it is symmetric otherwise error
+                    result = np.stack(result, axis=-1)
+                    rShap = result.shape
+                    bdPad = (np.array(rShap[1:3]) - colObj.tileSize)/2
+                    if (bdPad % 1 != 0).any():
+                        raise NotImplementedError('The offset is not symmetric.  This is not handled')
+                    bdPad = bdPad.astype(np.int)
+                    image_pred = result[0,bdPad[0]:-bdPad[0],bdPad[1]:-bdPad[1],:,:]
+                    
+                    combPreds = self.combinePredictionMaps.combineMaps(image_pred)
+                    
+                    u = image_name.split('/')
+                    u1 = u[-1].split('_RGB.tif')
+                    
+                    if(isVal == 1):
+                        savePath = os.path.join(resPath,'val')
+                        if not os.path.isdir(savePath):
+                            os.makedirs(savePath)
+                    else:
+                        savePath = resPath
+                    
+                    scipy.misc.imsave(os.path.join(savePath,u1[0]+'preds.png'), combPreds)
+                    if(savePredictions):
+                        scipy.io.savemat(os.path.join(savePath,u1[0]+'cfs.mat'), mdict={'preds': image_pred[:,:,1]})
+                    
+                    
+                    #get the image name & add something to it to show its the GT
+                    '''u = image_name.split('/')
+                    u1 = u[-1].split('_RGB.tif')
+                    scipy.misc.imsave(os.path.join(resPath,u1[0]+'preds.png'), np.argmax(result[0,:,:,:],axis=2))'''
+                    
+            finally:
+                coord.request_stop()
+                coord.join(threads)
+        
+        duration = time.time() - start_time
+        print('duration {:.2f} minutes'.format(duration/60))
+        return resPath
+    
+class uabAlgorithmRunNetwork_Soft(uabAlgorithmRunNetwork):
+    def testCNNmodel(self, colObj, imFiles, ckptDir, INPUT_SIZE = np.array((0, 0)), forceRun = 0, isVal=0, savePredictions=0):
+        #function to run a saved CNN model.  This is expected to be a fixed process and therefore it is not being more systematized than this
+        #takes in a model name, a checkpoint directory, a list of files to test on
+        #
+        #it will typically always output files in the same place (outputLabels) but you can override that if necessary
+        #
+        #if input_size is different from zero, then use that size, otherwise just use the size of the tiles as the input
+        
+        
+        print 'Start CNN testing'
+        # image reader
+        tf.reset_default_graph()
+        coord = tf.train.Coordinator()
+        config = tf.ConfigProto()
+        
+        #precompute the amount of padding required
+        if(INPUT_SIZE is not np.array((0,0))):
+            INPUT_SIZE = colObj.tileSize[:2]
+        
+        INPUT_SIZE = np.array(INPUT_SIZE)
+        valsz = self.network.getNextValidInputSize(INPUT_SIZE + self.network.getRequiredPadding())
+        padAmt = (valsz - INPUT_SIZE)/2
+        padAmt = padAmt.astype(np.int)
+        
+        self.network.inpSize = INPUT_SIZE + 2*padAmt
+        self.network.initGraph(toLoad=0)
+        #make results folder
+        resPath = self.modDir
+        
+        resFls = os.listdir(resPath)
+        if(len(resFls) > 0 and forceRun == 0):
+            return resPath
+        
+        #collection extensions
+        #exsts = colObj.getDataExtensions()
+        exsts = ['data', 'dif']
+        #exsts = ['data']
+        
+        
+        start_time = time.time()
+        with tf.Session(config=config) as sess:
+            init = tf.global_variables_initializer()
+            sess.run(init)
+        
+            saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+        
+            if os.path.exists(ckptDir) and tf.train.get_checkpoint_state(ckptDir):
+                latest_check_point = tf.train.latest_checkpoint(ckptDir)
+                saver.restore(sess, latest_check_point)
+                print 'Load model from ' + latest_check_point
+        
+            threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+            try:
+                for image_name in imFiles:
+                    # load reader
+                    #get all the datafiles that this network runs on 
+                    impath = [colObj.getDataNameByTile(image_name, ext) for ext in exsts]
+
+                    
+                    iterator_test = ImageLabelReader.getTestIterator(
+                        impath,
+                        batch_size=1,
+                        tile_dim=INPUT_SIZE,
+                        patch_size=self.network.inpSize,
+                        overlap=0, padding=padAmt)            
+                    # run
+                    result = self.network.testNetworkOp_softmax(sess, iterator_test)
+                    
+                    
+                    #this may result in there being a larger output patch because of the padding.  Assumes that the center is the valid region & that it is symmetric otherwise error
+                    rShap = result.shape
+                    bdPad = (np.array(rShap[1:3]) - colObj.tileSize[1:2])/2
+                    if (bdPad % 1 != 0).any():
+                        raise NotImplementedError('The offset is not symmetric.  This is not handled')
+                    bdPad = bdPad.astype(np.int)
+                    image_pred = result[0,bdPad[0]:-bdPad[0],bdPad[1]:-bdPad[1],:]
+                    
+                    combPreds = self.combinePredictionMaps.combineMapFunction_soft(image_pred)
+                    
+                    u = image_name.split('/')
+                    u1 = u[-1].split('_RGB.tif')
+                    
+                    if(isVal == 1):
+                        savePath = os.path.join(resPath,'val')
+                        if not os.path.exists(savePath):
+                            os.makedirs(savePath)
+                    else:
+                        savePath = resPath
+                    
+                    #scipy.misc.imsave(os.path.join(savePath,u1[0]+'preds.png'), combPreds)
+                    if(savePredictions):
+                        #scipy.io.savemat(os.path.join(savePath,u1[0]+'cfs.mat'), mdict={'preds': combPreds})
+                        np.save(os.path.join(savePath,u1[0]+'cfs.npy'), combPreds)
                     
                     
                     #get the image name & add something to it to show its the GT
