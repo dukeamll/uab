@@ -9,6 +9,7 @@ some globally utile functions
 
 from __future__ import division
 import scipy
+import scipy.misc
 from sys import platform
 import os
 import numpy as np
@@ -61,7 +62,6 @@ def read_or_new_pickle(path, toLoad = 0, toSave = 0, variable_to_save = []):
 
 def uabUtilAllTypeLoad(fileName):
     #handles the loading of a file of all types in python
-    
     try:
         if fileName[-3:] != 'npy':
             outP = scipy.misc.imread(fileName)
