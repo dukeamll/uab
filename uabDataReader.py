@@ -4,138 +4,180 @@ Created on Fri Nov 10 16:46:12 2017
 
 @author: Daniel
 
-class that handles the reading and iterating over files to be compatible with tensorflow
+class that handles the reading and iterating over files to be compatible with tensorflow.  This handles constructing a queue or an iterator in a way transparent to the user.  Assumes that a thread & session already exist to load and return data.
+
+call readerAction() to get your data for training/testing [whether it's a queue or reader is handled internally]
 """
 from __future__ import division
-import scipy.misc
+import scipy.misc, os
 import numpy as np
 import tensorflow as tf
 import uabUtilreader
+import util_functions
 
 
 #class to load all the possible slices of your data    
 class ImageLabelReader(object):
     
-    @staticmethod
-    def getTestIterator(image_dir, batch_size, tile_dim, patch_size, overlap, padding=0, flip=None):
-        # this is a iterator for test
-        block = []
-        nDims = 0
-        for file in image_dir:
-            if file[-3:] != 'npy':
-                img = scipy.misc.imread(file)
-            else:
-                img = np.load(file)
-            if len(img.shape) == 2:
-                img = np.expand_dims(img, axis=2)
-            nDims += img.shape[2]
-            block.append(img)
+    def __init__(self, gtInds, dataInds, parentDir, chipFiles, chip_size, tile_size,  batchSize, nChannels = 1, overlap=0, padding=np.array((0,0)), dataAug='', random=True, isTrain = True):
+        #gtInds - indexes to the extensions of the ground truth.  Refers to the indexes from the collection
+        #dataInds - indexes to the extensions of the data.  Refers to the indexes from the collection
+        #parentDir - directory with the data (training: probably the output of the patch-extractor. testing: probably the raw data directory)
+        #chipFiles - list of patch/tile names.  Could also be the file list output from the patch-extractor
+        #chip-size - data-size of input to the network
+        #tile-size - the data size of the file specified in chipFiles (e.g., tile or chip).  If this is different from chip-size, then a patch extraction operation (with overlap & padding) occurs to operate on the data piecemeal.
+        #batchSize - number of chips to send to the network
+        #nChannels - number of channels for each input file
+        #overlap - in pixels (1 side), single number
+        #padding - in pixels (1 side), tuple (y,x)
+        #dataAug - augmentation (supports 'flip', 'rotate')
+        #random - order in which files are provided to the network
+        #isTrain - this pertains only to iterators (not queues).  The iterator needs an infinite loop during training or the resource gets exhausted.
         
-        block = np.dstack(block)
-        
-        if flip is not None:
-            if flip < 2:
-                block = np.flip(block, axis=flip)
-            else:
-                block = np.rot90(block, k=flip-1)
-        
-        image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
-        
-        if (padding > 0).any():
-            block = uabUtilreader.pad_block(block, padding)
-            tile_dim = tile_dim + padding*2
-        cnt = 0
-        for patch in uabUtilreader.patchify(block, tile_dim, patch_size, overlap=overlap):
-            cnt += 1
-            image_batch[cnt-1, :, :, :] = patch
-            if cnt == batch_size:
-                cnt = 0
-                yield image_batch
-        # yield the last chunck
-        if cnt > 0:
-            yield image_batch[:cnt, :, :, :]
+        self.chip_size = chip_size
             
-    @staticmethod
-    def image_height_label_iterator(image_dir, batch_size, tile_dim, patch_size, overlap, padding=0, height_mode='subtract'):
-    # this is a iterator for test
-        block = []
-        for file in image_dir:
-            if file[-3:] != 'npy':
-                img = scipy.misc.imread(file)
-            else:
-                img = np.load(file)
-            if len(img.shape) == 2:
-                img = np.expand_dims(img, axis=2)
-            block.append(img)
-        if height_mode == 'all':
-            block = np.dstack(block)
-            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 5))
-        elif height_mode == 'subtract':
-            block = np.dstack([block[0], block[1]-block[2]])
-            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 4))
-        else:
-            block = np.dstack([block[0], block[1], block[2], block[1]-block[2]])
-            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 6))
-    
-        if padding > 0:
-            block = uabUtilreader.pad_block(block, padding)
-            tile_dim = (tile_dim[0]+padding*2, tile_dim[1]+padding*2)
-        cnt = 0
-        patches = uabUtilreader.patchify(block, tile_dim, patch_size, overlap=overlap)
-        for patch in patches:
-            cnt += 1
-            image_batch[cnt-1, :, :, :] = patch
-            if cnt == batch_size:
-                cnt = 0
-                yield image_batch
-        # yield the last chunck
-        if cnt > 0:
-            yield image_batch[:cnt, :, :, :]
-    
-    def __init__(self, chipFiles, input_size, coord, chanInf, random=True, dataAug=''):
-        #chanInf-> meta data about that input list (e.g., jpeg- 3 channels)
-        #list of lists: [['jpg',3],['png',1]]
-        #can add an optional divisor as a third input
-        
-        self.input_size = input_size
-        self.coord = coord
-        self.listMeta = chanInf
-        
+        #chipFiles:
+        #list of lists.  Each inner list is a list of the chips by their extension.  These are all the input feature maps for a particular tile location
         #need to separate the file names into their own vectors
-        el1 = chipFiles[0]
-        fnameList = []
-        for i in range(len(el1)):
-            fnameList.append(tf.convert_to_tensor([a[i] for a in chipFiles], dtype=tf.string))
         
-        self.queue = tf.train.slice_input_producer(fnameList, shuffle=random)
-        self.dataLists = self.readFromDisk(dataAug)
+        if(isinstance(chipFiles, str)):
+            filename = os.path.join(parentDir,chipFiles) 
+            with open(filename) as file:
+                chipFiles = file.readlines()
+            
+            chipFiles = [a.strip().split(' ') for a in chipFiles]
+        
+        if(nChannels is not list):
+            self.nChannels = [nChannels for a in range(len(chipFiles[0]))]
+        else:
+            self.nChannels = nChannels
+                       
+        el1 = chipFiles[0]
+        if(gtInds is not list):
+            gtInds = [gtInds]
+            
+        self.gtInds = gtInds
+        self.dataInds = dataInds
+            
+        procInds = self.gtInds + self.dataInds
+        #reorder the elements in el1 to get the extensions in the right order
+        el1 = [el1[i] for i in procInds]
+        self.nChannels = [self.nChannels[i] for i in procInds]
+        
+        #need to decide whether this can be a queue based or a regular data-iterator.  Can only use a queue if all the files are jpg/png otherwise need to use the slower data-reader
+        self.fileExts = [a.split('.')[-1] for a in el1]
+        extExistence = [a in ['jpg','png','jpeg'] for a in self.fileExts]
+        if(all(extExistence) and isTrain == 1):
+            self.isQueue = 1
+            fnameList = []
+            for i in procInds:
+                fnameList.append(tf.convert_to_tensor([os.path.join(parentDir,a[i]) for a in chipFiles], dtype=tf.string))
+                
+            self.internalQueue = tf.train.slice_input_producer(fnameList, shuffle=random)
+            self.dataLists = self.readFromDiskQueue(dataAug)
+            self.readManager = self.dequeue(batchSize)
+        else:
+            self.isQueue = 0
+                
+            if(isTrain):
+                self.readManager = self.readFromDiskIteratorTrain(parentDir, chipFiles, batchSize, tile_size, self.chip_size, random, overlap, padding, dataAug)
+            else:
+                self.readManager = self.readFromDiskIteratorTest(parentDir, chipFiles, batchSize, tile_size, self.chip_size, overlap, padding)
+    
+    def readerAction(self, num_elements, sess=None):
+        if(self.isQueue):
+            return sess.run(self.readManager)
+        else:
+            return next(self.readManager)
+    
+    def readFromDiskIteratorTrain(self, image_dir, chipFiles, batch_size, tile_dim, patch_size, random, overlap=0, padding=(0,0),dataAug=''):
+        # this is a iterator for training
+        
+        if(random):
+            idx = np.random.permutation(len(chipFiles))
+        nDims = len(chipFiles[0])
+        while True:
+            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
+            for cnt, randInd in enumerate(idx):
+                row = chipFiles[randInd]
+                blockList = []
+                nDims = 0
+                for file in row:
+                    img = util_functions.uabUtilAllTypeLoad(os.path.join(image_dir,file))
+                    if len(img.shape) == 2:
+                        img = np.expand_dims(img, axis=2)
+                    nDims += img.shape[2]
+                    blockList.append(img)
+                block = np.dstack(blockList)
+                
+                if dataAug != '':
+                    augDat = uabUtilreader.doDataAug(block, nDims, dataAug)
+                else:
+                    augDat = block
+            
+                if (np.array(padding) > 0).any():
+                    augDat = uabUtilreader.pad_block(augDat, padding)
+                
+                image_batch[cnt % batch_size, :, :, :] = augDat
+               
+                if((cnt+1) % batch_size == 0):
+                    yield image_batch
+    
+    def readFromDiskIteratorTest(self, image_dir, chipFiles, batch_size, tile_dim, patch_size, overlap=0, padding=(0,0)):
+        # this is a iterator for test
+        for row in chipFiles:
+            blockList = []
+            nDims = 0
+            for file in row:
+                img = util_functions.uabUtilAllTypeLoad(os.path.join(image_dir,file))
+                if len(img.shape) == 2:
+                    img = np.expand_dims(img, axis=2)
+                nDims += img.shape[2]
+                blockList.append(img)
+            block = np.dstack(blockList)
+        
+            if (np.array(padding) > 0).any():
+                block = uabUtilreader.pad_block(block, padding)
+                tile_dim = tile_dim + padding*2
+            
+            ind = 0
+            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
+            for patch in uabUtilreader.patchify(block, tile_dim, patch_size, overlap=overlap):
+                print str(ind) +': '+ str(patch.shape)
+                image_batch[ind, :, :, :] = patch
+                ind += 1
+                if ind == batch_size:
+                    ind = 0
+                    yield image_batch
+            # yield the last chunk
+            if ind > 0:
+                yield image_batch[:ind, :, :, :]
+    
 
     def dequeue(self, num_elements):
         #puts the images in the queue using the iterator
         batches = tf.train.batch(self.dataLists, num_elements)
-        return batches    
+        return batches 
     
-    def readFromDisk(self, dataAug=''):
+    def readFromDiskQueue(self, dataAug=''):
         #actually read images from disk
         #apply augmentations (string interface)
         #last input is always the label
         
         queueOutput = []
-        for i in range(len(self.queue)):
-            qData = tf.read_file(self.queue[i])
+        totChannels = np.sum(self.nChannels)
+        for i in range(len(self.internalQueue)):
+            qData = tf.read_file(self.internalQueue[i])
             #depending on whether it is a jpeg or png load it that way
-            if(self.listMeta[i][0] == 'jpg'):
-                ldData = tf.image.decode_jpeg(qData, channels=self.listMeta[i][1])
-            elif(self.listMeta[i][0] == 'png'):
-                ldData = tf.image.decode_png(qData, channels=self.listMeta[i][1])
-                if(len(self.listMeta[i]) == 3):
-                    #for GT files
-                    ldData /= self.listMeta[i][2]
+            if(self.fileExts[i] == 'jpg'):
+                ldData = tf.image.decode_jpeg(qData, channels=self.nChannels[i])
+            elif(self.fileExts[i] == 'png'):
+                ldData = tf.image.decode_png(qData, channels=self.nChannels[i])
                 
-            rldData = tf.image.resize_images(ldData, self.input_size)
+            rldData = tf.image.resize_images(ldData, self.chip_size)
             
             if dataAug:
-                augDat = uabUtilreader.doDataAug(rldData, self.listMeta[i], dataAug)
+                augDat = uabUtilreader.doDataAug(rldData, totChannels, dataAug)
             else:
                 augDat = rldData
             
@@ -143,55 +185,36 @@ class ImageLabelReader(object):
         
         return queueOutput
 
-#reader for the UM competition where we also load in custom maps (like if you want to do an operation on the maps.  This is not recommended and should be done in the pre-processing stages)
-class ImageReaderHeightOps(ImageLabelReader):
-    def __init__(self, chipFiles, input_size, coord, chanInf, random=True, dataAug='', heightMode=''):
-        self.heightMode = heightMode
-        super(ImageReaderHeightOps, self).__init__(chipFiles, input_size, coord, chanInf, random, dataAug=dataAug)
+
+#for debugging purposes
+if __name__ == '__main__':    
+    parentDir = '/media/ei-edl01/data/remote_sensing_data/Results/PatchExtr/inria_orgd/chipExtrReg_cSz572x572'
     
-    def dequeue(self, num_elements):
-        batches = \
-            tf.train.batch(self.dataLists, num_elements)
-        if self.height_mode == 'all':
-            return [tf.concat([batches[0], batches[1], batches[2]], axis=3), batches[3]]
-        elif self.height_mode == 'subtract':
-            #RGB, DSM - DTM
-            return [tf.concat([batches[0], batches[1]-batches[2]], axis=3), batches[3]]
-        elif self.height_mode == 'subtract_all':
-            return [tf.concat([batches[0], batches[1], batches[2],
-                              batches[1] - batches[2]], axis=3), batches[3]]
-    
-    def getTestIterator(self, image_dir, batch_size, tile_dim, patch_size, overlap, padding=0):
-        # this is a iterator for test
-        block = []
-        for file in image_dir:
-            img = scipy.misc.imread(file)
-            if len(img.shape) == 2:
-                img = np.expand_dims(img, axis=2)
-            block.append(img)
-        #block = np.dstack(block)
-        if self.heightMode == 'all':
-            block = np.dstack(block)
-            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 5))
-        elif self.heightMode == 'subtract':
-            block = np.dstack([block[0], block[1]-block[2]])
-            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 4))
-        else:
-            block = np.dstack([block[0], block[1], block[2], block[1]-block[2]])
-            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 6))
-    
-        if padding > 0:
-            block = uabUtilreader.pad_block(block, padding)
-            tile_dim = (tile_dim[0]+padding*2, tile_dim[1]+padding*2)
-        cnt = 0
-        #image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 3))
-        for patch in uabUtilreader.patchify(block, tile_dim, patch_size, overlap=overlap):
-            cnt += 1
-            image_batch[cnt-1, :, :, :] = patch
-            if cnt == batch_size:
-                cnt = 0
-                yield image_batch
-        # yield the last chunck
-        if cnt > 0:
-            yield image_batch[:cnt, :, :, :]
+    coord = tf.train.Coordinator()
+    batch_size = 10
+    imR = ImageLabelReader(0, [1, 2], parentDir, 'fileList.txt', (572, 572), (572, 572), batch_size,isTrain=1)
+
+    testBatchSize = 11
+    print 'initialized reader'
+    with tf.Session() as sess:
+        
+        init = tf.global_variables_initializer()
+        sess.run(init)
+        threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+        N1 = imR.readerAction(testBatchSize, sess)
+        #N2 = imR.readerAction(testBatchSize, sess)
+        #N3 = imR.readerAction(testBatchSize, sess)
+        
+        coord.request_stop()
+        coord.join(threads)
+        
+    import matplotlib.pyplot as plt
+    for i in range(5):
+        plt.subplot(5,3,i*3+1)
+        plt.imshow(N1[i,:,:,0])
+        plt.subplot(5,3,i*3+2)
+        plt.imshow(N1[i,:,:,1])
+        plt.subplot(5,3,i*3+3)
+        plt.imshow(N1[i,:,:,2])
+    plt.show()
     

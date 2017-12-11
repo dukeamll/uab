@@ -49,9 +49,9 @@ def doDataAug(data, dataMeta, augType):
     #dataMeta is a list of info (e.g. label, number of channels)
     
     if 'flip' in augType:
-        image = image_flipping(data, dataMeta[1])
+        image = image_flipping(data, dataMeta)
     if 'rotate' in augType:
-        image = image_rotating(data, dataMeta[1])
+        image = image_rotating(data, dataMeta)
     
     return image
 

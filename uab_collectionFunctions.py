@@ -4,66 +4,195 @@ Created on Mon Nov 06 21:25:52 2017
 
 @author: Daniel
 
-class to extract patches from the data-structure representing each image
+Dataset handler.  All tile-level transformations & meta-data are saved on the server.  Results of patch extraction etc. are all (expected to be) saved locally.  This is done to save some space across users of the same dataset.  Saving patches locally is done to speed up data-access during training
 
-computes mean for training images and saves it
+This class contains functions to keep the accounting of the tiles & their associated files.  A new collection should be organized in the format specified below.  This is manual labor someone will need to perform :).  In this file, the default names are written into the class.  You do not need to make the "Processed_Tiles" folders.
 
-for the future:
-    (1) separate the paths from this file
-    (2) have the by instance information as a class?  maybe?
+Default behavior: to simplify accounting later down the line, RGB channels are divorced and saved in separate files.  Each file contains a single channel.  At collection initialization, a check is performed whether this has been performed.  This will happen before any other tile-level operations are performed.
+
+server/
+    path/to/data/[Dataset Name 1]/
+        data/
+            Original_Tiles/
+                All the files associated to all of the tiles as downloaded from another place.  This includes all data (even if some files don't have ground truth associated to them) and all the ground truth (even if such files are missing for some of the data files)
+                Each tile can have several channels (e.g., RGB, infrared, height).  All files associated to a particular tile should be differ by their postfix and extension ONLY.  Separate parts of the tilename using underscores ('_').  An example is shown here:
+                    TileName_CityName_RGB.tif
+                    TileName_CityName_DSM.tif
+            Processed_Tiles/
+                [Directory for all preprocessed tiles of this dataset, organized by folder]
+                preproc_result1/
+                    [In the preproc object, both a postfix & an extension are specified to append to the tilename during this action]
+                    TileName_preprocExtension.extension
+                preproc_result2/
+        meta_data/
+            collection.txt
+                file that is updated each time a new channel is made using preprocessing
+            colTileNames.txt
+                file that contains the name of each tile in the collection without extensions
+            mean_values.npy
+                file that contains the mean value of each channel
+        
+        collectionMeta.txt
+            a user-made file that specifies information of interest about this collection (e.g., data-resolution)
+    path/to/data/[Dataset Name 2]/
+    path/to/data/[Dataset Name 3]/
+    
+    
+Future work:
+    (1) setExtensions(): Automatically handle pruning the list of processed tiles in the metadata if some were deleted by transferring the descriptions of previously processed tiles 
 """
 
 from __future__ import division
-import uabUtilSubm
-import os, scipy, glob
-import numpy as np
+import os, glob
+import uabRepoPaths
+import util_functions, uabPreprocClasses
 
 class uabCollection(object):
     
-    #the directory names for data & results.  These are sub-directories to the collection name itself for now
-    dataPath = 'data'
-    resPath = 'Results'
-    instanceDir = 'collectionInfo'
+    #These are sub-directories to the collection name as specified above
+    colDirnames = {'orig': 'Original_Tiles', 'proc' : 'Processed_Tiles'}
+    dataDirnames = {'data':'data', 'meta':'meta_data'}
     
-    def __init__(self, colN, gtExt, dataExts):
+    metaFilename = 'collection.txt'
+    tileNamesFile = 'colTileNames.txt'
+    
+    def __init__(self, colN, splitChans = 1):
         #full path to data directory
         self.colName = colN
-        self.imDirectory = os.path.join(uabUtilSubm.parentDir, uabCollection.dataPath)
-        #extensions to the data, assumes that the tile name is fixed but that the ground truth & the data have the same tile name.  gtExts -> just the extension for ground truth.  data extensions are their own dictionary to be supplied here
-        gtDict = {'GT': gtExt}
-        self.extensions = dataExts.copy()
-        self.extensions.update(gtDict)
+        self.imDirectory = os.path.join(uabRepoPaths.dataPath, self.colName)
         
-        #list of the names of tiles for this collection
+        #make the meta-data directory
+        util_functions.uabUtilMakeDirectoryName(os.path.join(self.imDirectory, uabCollection.dataDirnames['meta']))
         
-        #this is split by train and test because that's how the collection was organized but this can be overwritten later
-        self.tileTrList = self.getImLists('training')
-        self.tileTeList = self.getImLists('testing')
+        #list of the names of tiles for this collection.  DO NOT MODIFY
+        self.tileList = self.getImLists('orig')
         
-        #full list
-        self.tileList = self.tileTrList + self.tileTeList
+        #For a block to know on which data to run, we provide either:
+        #(1) a list of tiles
+        #(2) the path to a file with a list of files 
+        #depending on whether this is a tile-level or patch-level block.  Blocks will modify this property.  DO NOT MODIFY TILELIST
+        self.dataListForRun = self.tileList
         
-        #get the directory where the by-instance information is saved for each tile
-        self.instanceMD = os.path.join(self.getResultsDir(), uabCollection.instanceDir)
-        kk = dataExts.keys()
-        im = self.loadTileData(os.path.join('training', self.tileTrList[0]), kk[0])
+        #data structure that associates the tile channels to a number that the user can select
+        self.extDS = []
+        #make mapping of processed tiles to extensions.  By default we should have RGB split up- check if this has happened otherwise, do it
+        self.setExtensions(splitChans)
+        
+        #get tile size
+        im = self.loadTileDataByExtension(self.tileList[0], 0)
         self.tileSize = im.shape
+        
+        #get tile tile-mean
         #self.colMean = self.computeTrainingMean()
-        #self.classProps = self.computeClassProportions()
-    
-    def getImLists(self, dirn):
-        #returns the name of all the images in training directory.  Removes the path & extension
         
-        kk = self.extensions.values()
-        dataSuffs = filter(lambda x: x != self.extensions['GT'], kk)
-        
-        gtlF = glob.glob(os.path.join(self.imDirectory, dirn , '*' + dataSuffs[0]))
-        return [a.split(uabUtilSubm.sl)[-1].split(dataSuffs[0])[0] for a in gtlF]
+        print('Warning: do not forget to select tile-types for patch extraction.  Run function readMetadata() to obtain tile-level information')
     
-    def getDataNameByTile(self, tileName, ext):
+    def getImLists(self, colDir = 'orig', forcerun = 0):
+        #returns the name of all the tiles in the dataDirectory.  Removes extensions
+        colFileName = os.path.join(self.imDirectory, uabCollection.dataDirnames['meta'], uabCollection.tileNamesFile)
+        if(os.path.exists(colFileName) or forcerun == 1):
+            with open(colFileName, 'r') as file:
+                return [a.strip() for a in file.readlines()]
+        else:
+            filenames = glob.glob(os.path.join(self.imDirectory, uabCollection.dataDirnames['data'], uabCollection.colDirnames[colDir],'*'))
+            tilenames = sorted(list(set(['_'.join(a.split(os.sep)[-1].split('_')[:-1]) for a in filenames])))
+            with open(colFileName, 'w') as file:
+                file.write('\n'.join(tilenames))
+            
+            return tilenames
+    
+    def getMetadataTiles(self, readcontents = 0):
+        #returns path for the metadata of all the tiles.  set readcontents = 1 if you want to load the information otherwise returns path
+        metDatPath = os.path.join(self.imDirectory, uabCollection.dataDirnames['meta'],uabCollection.metaFilename)
+        if(readcontents == 1):
+            with open(metDatPath) as f:
+                datLines = f.readlines()
+                linesByTabs = [line.split('\t') for line in datLines]
+            
+            return linesByTabs
+        else:
+            return metDatPath
+    
+    def setExtensions(self, doSplit=1):
+        #function that reads the meta-data file to get all the processed tiles and outputs a dictionary that associates preproc names to extensions
+        #if that file doesn't exist, it is made here
+        metFileName = self.getMetadataTiles()
+        if os.path.exists(metFileName):
+            metaContents = self.getMetadataTiles(readcontents=1)
+            exts = [a[:2] for a in metaContents]
+            self.extensions = {}
+            for ext in exts:
+                self.extensions[ext[0]] = ext[1]
+                self.extDS.append(ext)
+        else:
+            #this file doesn't exist & the RGB mapping hasn't happened yet so call that here.  If there are additional files to RGB, those remained in Original_Tiles until futher notice and should be specified as such here
+            #(1) get all the extensions in the original directory
+            allFileTypes = glob.glob(os.path.join(self.imDirectory, uabCollection.dataDirnames['data'], uabCollection.colDirnames['orig'],  self.tileList[0]+'*'))
+            exts = list(set([a.split('_')[-1] for a in allFileTypes]))
+            
+            self.extensions = {}
+            for ext in exts:
+                self.extensions[ext] = uabCollection.colDirnames['orig']
+                self.extDS.append([ext, self.extensions[ext]])
+            
+            if(doSplit):
+                #perform splitting of layers
+                kk = self.extensions.keys()
+                allChans = range(len(kk))
+                for chanId in allChans:
+                    data = self.loadTileDataByExtension(self.tileList[0], chanId)
+                    if(len(data.shape) == 3):
+                        #this input is multi-channel so split it.  This also takes care of writing to the meta data file
+                        extParts = kk[chanId].split('.')
+                        for c in range(data.shape[-1]):
+                            extPref = extParts[0] + str(c) + '.' + extParts[1]
+                            splitObj = uabPreprocClasses.uabPreprocSplit(chanId, extPref , 'Channel %s Layer %d' % (extParts[0], c), c)
+                            splitObj.run(self, forcerun=1)
+                    else:
+                        extName = kk[chanId]
+                        extLocation = self.extensions[extName]
+                        self.setMetadataFile("{}\t{}\t{}\n".format(extName, extLocation, 'Original Layer ' + str(chanId)))
+            else:
+                for cnt, ext in enumerate(exts):
+                    self.setMetadataFile("{}\t{}\t{}\n".format(ext, self.extensions[ext], 'Original Layer ' + str(cnt)))   
+    
+    def readMetadata(self):
+        #call this function to get a human readable output of the meta-data relating to the tiles that have been preprocessed
+        metFileName = self.getMetadataTiles()
+        if os.path.exists(metFileName):
+            metaContents = self.getMetadataTiles(readcontents=1)
+            print('Description:  these are all the preprocessed tiles available for this dataset.  Use the indexes output on the start of each line to select this tile-type when going to patch extraction in the following step')
+            self.extDS = []
+            self.extensions = {}
+            for cnt, a in enumerate(metaContents):
+                self.extensions[a[0]] = a[1]
+                self.extDS.append([a[0], a[1]])
+                print('[%d] %s: %s, [ext: %s]' % (cnt, a[2].strip(), a[1].strip(), a[0].strip()))
+        else:
+            print('This file has not yet been created')
+    
+    def setMetadataFile(self, updString):
+        #update the metadata file
+        metFileName = self.getMetadataTiles()
+        with open(metFileName,'a+') as file:
+            file.write(updString)
+            
+    def getExtensionInfoById(self, extId):
+        #From the meta-data list, get the extension that corresponds to the number extId
+        #output: extension, path to extension data
+        return self.extDS[extId][0], self.extDS[extId][1]
+    
+    def loadTileDataByExtension(self, tile, extId):
+        #specify extension ID according to the meta data
+        ext, dirn = self.getExtensionInfoById(extId)
+        tileDataPath = self.getDataNameByTile(dirn, tile, ext)
+        return util_functions.uabUtilAllTypeLoad(tileDataPath)
+    
+    def getDataNameByTile(self, dirn, tileName, ext):
         #convenience function to associate tile name with corresponding data
-        return tileName + self.extensions[ext]
+        return os.path.join(self.imDirectory, uabCollection.dataDirnames['data'], dirn, tileName + '_' + ext)
     
+"""    
     def getAllTileByDirAndExt(self, dirn, ext):
         imlist = self.getImLists(dirn)
         return [item + self.extensions[ext] for item in imlist]
@@ -83,23 +212,6 @@ class uabCollection(object):
         code = uabUtilSubm.read_or_new_pickle(fOutput, toLoad, 0)
         
         return code
-    
-    def getResultsDir(self):
-        return os.path.join(uabUtilSubm.parentDir, uabCollection.resPath)
-    
-    def getDataExtensions(self):
-        #remove the ground truth extension and return all the rest
-        return [a for a in self.extensions.keys() if a != 'GT']
-    
-    def loadTileData(self, tileName, ext):
-        imNm = os.path.join(self.imDirectory, self.getDataNameByTile(tileName, ext))
-        if imNm[-3:] != 'npy':
-            return scipy.misc.imread(imNm)
-        else:
-            return np.load(imNm)
-    
-    def loadGTdata(self, tileName):
-        return scipy.misc.imread(os.path.join(self.imDirectory, self.getDataNameByTile(tileName, 'GT')))
     
     def computeTrainingMean(self, forceRun=0):
         #computes the mean RGB value of the pixels in training
@@ -163,42 +275,5 @@ class uabCollection(object):
             uabUtilSubm.read_or_new_pickle(os.path.join(resDir, fname), toSave=1,variable_to_save=cprops)
             
         return cprops
-    
-    
-class uabCollection_bh(uabCollection):
-    
-    #the directory names for data & results.  These are sub-directories to the collection name itself for now
-    dataPath = 'data'
-    resPath = 'Results'
-    instanceDir = 'collectionInfo'
-    
-    def __init__(self, colN, gtExt, dataExts):
-        #full path to data directory
-        self.colName = colN
-        self.imDirectory = os.path.join(uabUtilSubm.parentDir, uabCollection.dataPath)
-        #extensions to the data, assumes that the tile name is fixed but that the ground truth & the data have the same tile name.  gtExts -> just the extension for ground truth.  data extensions are their own dictionary to be supplied here
-        gtDict = {'GT': gtExt}
-        self.extensions = dataExts.copy()
-        self.extensions.update(gtDict)
-        
-        #list of the names of tiles for this collection
-        
-        #this is split by train and test because that's how the collection was organized but this can be overwritten later
-        self.tileTrList = self.getImLists('training')
-        self.tileTeList = self.getImLists('testing')
-        
-        #full list
-        self.tileList = self.tileTrList + self.tileTeList
-        
-        #get the directory where the by-instance information is saved for each tile
-        self.instanceMD = os.path.join(self.getResultsDir(), uabCollection.instanceDir)
-        self.tileSize = np.array([2048, 2048])
-        #kk = dataExts.keys()
-        #im = self.loadTileData(os.path.join('testingPadded', self.tileTrList[0]), kk[0])
-        #self.tileSize = im.shape
-        #self.colMean = self.computeTrainingMean()
-        #self.classProps = self.computeClassProportions()
-    
-        
             
-        
+"""     

@@ -13,7 +13,6 @@ import numpy as np
 
 class uabNetArchis(object):
     
-    resDir = 'network'
     def __init__(self, custName, input_size, nClasses=2, ndims=3, pretrainDict = {}):
         self.inpSize = input_size
         self.featDims = ndims
@@ -111,14 +110,13 @@ class uabNetArchis(object):
         tf.contrib.framework.init_from_checkpoint(self.ckptDir, load_dict)
         
         
-    def trainNetworkOp(self, data_iter, sess, globStep, optm, mode, data_reader = []):
+    def trainNetworkOp(self, dataHandler, batch_size, globStep, optm, mode, sess):
         #convenience function to pass training data through the network
 
-        if data_iter is not None:
-            X_batch, y_batch = sess.run(data_iter)
-        else:
-            X_batch, y_batch = next(data_reader)
-            
+        outp = dataHandler.readerAction(batch_size, sess)
+        X_batch = outp[:,:,:,dataHandler.dataInds]
+        y_batch = outp[:,:,:,dataHandler.gtInds]
+           
         a, b = sess.run([optm, globStep], 
                         feed_dict={self.inputs['X']:X_batch,
                         self.inputs['y']:y_batch,
@@ -126,27 +124,21 @@ class uabNetArchis(object):
     
         return a, b, X_batch, y_batch
     
-    def testNetworkOp(self, sess, test_iterator):
+    def testNetworkOp(self, sess, test_iterator, isSoftmax = 0):
         #convenience function to feed testing data to a network
         result = []
         for X_batch in test_iterator:
-            pred = sess.run(self.pred, feed_dict={self.inputs['X']:X_batch,
+            if(isSoftmax):
+                predLay = tf.nn.softmax(self.pred)
+            else:
+                predLay = self.pred
+                
+            pred = sess.run(predLay, feed_dict={self.inputs['X']:X_batch,
                                                   self.inputs['mode']: False})
             result.append(pred)
         result = np.vstack(result)
         return result
     
-    def testNetworkOp_softmax(self, sess, test_iterator):
-        #convenience function to feed testing data to a network
-        result = []
-        for X_batch in test_iterator:
-            pred = sess.run(tf.nn.softmax(self.pred), 
-                            feed_dict={self.inputs['X']:X_batch,
-                                       self.inputs['mode']: False})
-            result.append(pred)
-        result = np.vstack(result)
-        return result
-
 ##################################    
 ## Useful functions for networks        
 ##################################

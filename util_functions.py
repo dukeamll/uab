@@ -10,7 +10,7 @@ some globally utile functions
 from __future__ import division
 import scipy
 from sys import platform
-import pickle, os
+import os
 import numpy as np
 
 sl = os.path.sep
@@ -20,6 +20,10 @@ if platform == 'win32':
     parentDir = 'Y:\\data\\'
 elif platform == 'linux2':
     parentDir = '/media/Y/data/'    
+    
+def uabUtilMakeDirectoryName(dirName):
+    if(not(os.path.isdir(dirName))):
+        os.makedirs(dirName)     
 
 def read_or_new_pickle(path, toLoad = 0, toSave = 0, variable_to_save = []):
     #check whether a pickled file exists
@@ -43,47 +47,43 @@ def read_or_new_pickle(path, toLoad = 0, toSave = 0, variable_to_save = []):
     if path and os.path.isfile(path):    
         #if the file exists and you wanted to load it
         if(toLoad == 1):
-            with open(path, "rb") as f:
-                try:
-                    return pickle.load(f)
-                except StandardError: # so many things could go wrong, can't be more specific.
-                    return -1
+            return uabUtilAllTypeLoad(path)
         else:
             code = 1
     else:
         code = 0
     
     if(toSave == 1):
-        with open(path, "wb") as f:
-            pickle.dump(variable_to_save, f)
+        uabUtilAllTypeSave(path, variable_to_save)
         code = 2
         
-    return code     
+    return code
+
+def uabUtilAllTypeLoad(fileName):
+    #handles the loading of a file of all types in python
+    
+    try:
+        if fileName[-3:] != 'npy':
+            outP = scipy.misc.imread(fileName)
+        else:
+            outP = np.load(fileName)
+        
+        return outP
+    except StandardError: # so many things could go wrong, can't be more specific.
+        raise NotImplementedError('Problem loading this data tile')
+
+def uabUtilAllTypeSave(fileName, variable_to_save):
+    #handles the loading of a file of all types in python
+    if fileName[-3:] != 'npy':
+        scipy.misc.imsave(fileName, variable_to_save)
+    else:
+        np.save(fileName, variable_to_save) 
 
 def d2s(decimal, ndigs=5):
     #input decimal, returns it as a string with the dot replaced by a 'p'
     inpStr = '%0.'+('%d'%ndigs)+'f'
     replStr = inpStr % decimal
     return replStr.replace('.','p')
-
-def extractPatch(cIm, x1, x2, dim1, dim2, savename = ''):
-    #extract a patch from the image
-    #if savename is not empty, save the image there otherwise return the image
-    x1 = int(x1)
-    x2 = int(x2)
-    
-    nDims = cIm.shape
-    if(len(nDims) == 2):
-        chipDat = cIm[x1:x1+dim1, x2:x2 + dim2]
-    else:
-        chipDat = cIm[x1:x1+dim1, x2:x2 + dim2,:]
-
-    #save in directory
-    if savename:
-        scipy.misc.imsave(savename, chipDat)
-    else:
-        return chipDat
-    
 
 def data_iterator(batch_size, patchList, toRotate=1, toFlip=1):
     """
