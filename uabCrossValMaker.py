@@ -36,4 +36,3 @@ class uabXvalParent(object):
 
 class uabXvalByCity(uabXvalParent):
     def computeFolds(self, chipFiles):
-        pass
