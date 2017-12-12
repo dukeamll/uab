@@ -29,7 +29,7 @@ def uabPPremSmClose(dirPath, tileNames, tr):
         
         concomp, maxNum = measure.label(imOut,connectivity=1,return_num=True)
         all_labels = concomp.flatten()
-        N,_ = scipy.histogram(all_labels, bins=range(0,maxNum+1,1))
+        N,_ = scipy.histogram(all_labels, bins=list(range(0,maxNum+1,1)))
         NabTr = np.where(N > tr)
         
         rr = np.zeros(all_labels.shape)
@@ -48,6 +48,6 @@ def uabPPremSmClose(dirPath, tileNames, tr):
         scipy.misc.imsave(os.path.join(resPathPP,tile+'preds.png'), imClose)
         tileInd+=1
         if(tileInd % 10 == 0):
-            print "Finished tile " + str(tileInd)
+            print("Finished tile " + str(tileInd))
 
     return resPathPP

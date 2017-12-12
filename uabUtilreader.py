@@ -8,7 +8,7 @@ Created on Wed Nov 22 10:18:31 2017
 Useful functions for data readers.  Particularly, holds the functions for augmentation which should be accessed through doDataAug()
 """
 
-from __future__ import division
+
 import tensorflow as tf
 import numpy as np
 

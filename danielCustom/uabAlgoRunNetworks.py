@@ -14,14 +14,14 @@ Testing procedure
 (3) Generate confidence maps
 (4) convert maps to a RLE file to submit to the competition
 """
-from __future__ import division
+
 import os, time, shutil
 import numpy as np
 import tensorflow as tf
 import scipy.misc
 import uabUtilSubm
 from uabDataReader import ImageLabelReader
-import uabFuserPredictionMaps
+from . import uabFuserPredictionMaps
 
 
 class uabAlgorithmRunNetwork(object):
@@ -101,7 +101,7 @@ class uabAlgorithmRunNetwork(object):
         #
         #cities and tiles are set in order to subselect data for training/validation
         
-        print 'Start CNN training'
+        print('Start CNN training')
         ckptName = self.makeCheckpointDir()
         
         if forceRun == 0 and os.listdir(ckptName) != "":
@@ -144,7 +144,7 @@ class uabAlgorithmRunNetwork(object):
             if startPointDir and os.path.exists(startPointDir) and tf.train.get_checkpoint_state(startPointDir):
                 latest_check_point = tf.train.latest_checkpoint(startPointDir)
                 saver.restore(sess, latest_check_point)
-                print 'Pretrain from ' + startPointDir
+                print('Pretrain from ' + startPointDir)
     
             threads = tf.train.start_queue_runners(coord=extrObj.coord, sess=sess)
             try:
@@ -165,13 +165,13 @@ class uabAlgorithmRunNetwork(object):
                             pred_train, step_cross_entropy, step_summary = sess.run([self.network.pred, self.network.loss, self.summary], feed_dict={self.network.inputs['X']: X_batch, self.network.inputs['y']: y_batch, self.network.inputs['mode']: True})
                             train_summary_writer.add_summary(step_summary, self.global_step_value)
                         
-                            print('Epoch {:d} step {:d}\tcross entropy = {:.3f}'.
-                                  format(epoch, self.global_step_value, step_cross_entropy))
+                            print(('Epoch {:d} step {:d}\tcross entropy = {:.3f}'.
+                                  format(epoch, self.global_step_value, step_cross_entropy)))
                     
                     #operations about validation
-                    print 'Validation Start'
+                    print('Validation Start')
                     pred_valid, cross_entropy_valid, _, _ = self.network.trainNetworkOp(validIter, sess, self.global_step, self.optimizer, False)
-                    print('Validation cross entropy: {:.3f}'.format(cross_entropy_valid))
+                    print(('Validation cross entropy: {:.3f}'.format(cross_entropy_valid)))
                     valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op,
                                                        feed_dict={valid_cross_entropy: cross_entropy_valid})
                     train_summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)
@@ -182,7 +182,7 @@ class uabAlgorithmRunNetwork(object):
                 saver.save(sess, '{}/model.ckpt'.format(ckptName), global_step=self.global_step)
             
         duration = time.time() - start_time
-        print('duration {:.2f} hours'.format(duration/60/60))
+        print(('duration {:.2f} hours'.format(duration/60/60)))
         
         return ckptName
     
@@ -195,7 +195,7 @@ class uabAlgorithmRunNetwork(object):
         #if input_size is different from zero, then use that size, otherwise just use the size of the tiles as the input
         
         
-        print 'Start CNN testing'
+        print('Start CNN testing')
         # image reader
         tf.reset_default_graph()
         coord = tf.train.Coordinator()
@@ -234,7 +234,7 @@ class uabAlgorithmRunNetwork(object):
             if os.path.exists(ckptDir) and tf.train.get_checkpoint_state(ckptDir):
                 latest_check_point = tf.train.latest_checkpoint(ckptDir)
                 saver.restore(sess, latest_check_point)
-                print 'Load model from ' + latest_check_point
+                print('Load model from ' + latest_check_point)
         
             threads = tf.train.start_queue_runners(coord=coord, sess=sess)
             try:
@@ -297,7 +297,7 @@ class uabAlgorithmRunNetwork(object):
                 coord.join(threads)
         
         duration = time.time() - start_time
-        print('duration {:.2f} minutes'.format(duration/60))
+        print(('duration {:.2f} minutes'.format(duration/60)))
         return resPath
     
     
@@ -310,7 +310,7 @@ class uabAlgorithmRunNetwork(object):
         #if input_size is different from zero, then use that size, otherwise just use the size of the tiles as the input
         
         
-        print 'Start CNN testing'
+        print('Start CNN testing')
         # image reader
         tf.reset_default_graph()
         coord = tf.train.Coordinator()
@@ -350,7 +350,7 @@ class uabAlgorithmRunNetwork(object):
             if os.path.exists(ckptDir) and tf.train.get_checkpoint_state(ckptDir):
                 latest_check_point = tf.train.latest_checkpoint(ckptDir)
                 saver.restore(sess, latest_check_point)
-                print 'Load model from ' + latest_check_point
+                print('Load model from ' + latest_check_point)
         
             threads = tf.train.start_queue_runners(coord=coord, sess=sess)
             try:
@@ -425,7 +425,7 @@ class uabAlgorithmRunNetwork(object):
                 coord.join(threads)
         
         duration = time.time() - start_time
-        print('duration {:.2f} minutes'.format(duration/60))
+        print(('duration {:.2f} minutes'.format(duration/60)))
         return resPath
     
 class uabAlgorithmRunNetwork_Aug(uabAlgorithmRunNetwork):
@@ -438,7 +438,7 @@ class uabAlgorithmRunNetwork_Aug(uabAlgorithmRunNetwork):
         #if input_size is different from zero, then use that size, otherwise just use the size of the tiles as the input
         
         
-        print 'Start CNN testing'
+        print('Start CNN testing')
         # image reader
         tf.reset_default_graph()
         coord = tf.train.Coordinator()
@@ -476,7 +476,7 @@ class uabAlgorithmRunNetwork_Aug(uabAlgorithmRunNetwork):
             if os.path.exists(ckptDir) and tf.train.get_checkpoint_state(ckptDir):
                 latest_check_point = tf.train.latest_checkpoint(ckptDir)
                 saver.restore(sess, latest_check_point)
-                print 'Load model from ' + latest_check_point
+                print('Load model from ' + latest_check_point)
         
             threads = tf.train.start_queue_runners(coord=coord, sess=sess)
             try:
@@ -563,7 +563,7 @@ class uabAlgorithmRunNetwork_Aug(uabAlgorithmRunNetwork):
                 coord.join(threads)
         
         duration = time.time() - start_time
-        print('duration {:.2f} minutes'.format(duration/60))
+        print(('duration {:.2f} minutes'.format(duration/60)))
         return resPath
     
 class uabAlgorithmRunNetwork_Soft(uabAlgorithmRunNetwork):
@@ -576,7 +576,7 @@ class uabAlgorithmRunNetwork_Soft(uabAlgorithmRunNetwork):
         #if input_size is different from zero, then use that size, otherwise just use the size of the tiles as the input
         
         
-        print 'Start CNN testing'
+        print('Start CNN testing')
         # image reader
         tf.reset_default_graph()
         coord = tf.train.Coordinator()
@@ -616,7 +616,7 @@ class uabAlgorithmRunNetwork_Soft(uabAlgorithmRunNetwork):
             if os.path.exists(ckptDir) and tf.train.get_checkpoint_state(ckptDir):
                 latest_check_point = tf.train.latest_checkpoint(ckptDir)
                 saver.restore(sess, latest_check_point)
-                print 'Load model from ' + latest_check_point
+                print('Load model from ' + latest_check_point)
         
             threads = tf.train.start_queue_runners(coord=coord, sess=sess)
             try:
@@ -672,5 +672,5 @@ class uabAlgorithmRunNetwork_Soft(uabAlgorithmRunNetwork):
                 coord.join(threads)
         
         duration = time.time() - start_time
-        print('duration {:.2f} minutes'.format(duration/60))
+        print(('duration {:.2f} minutes'.format(duration/60)))
         return resPath

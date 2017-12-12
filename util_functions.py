@@ -7,7 +7,7 @@ Created on Mon Nov 06 17:55:23 2017
 some globally utile functions
 """
 
-from __future__ import division
+
 import scipy
 import scipy.misc
 from sys import platform
@@ -69,7 +69,7 @@ def uabUtilAllTypeLoad(fileName):
             outP = np.load(fileName)
         
         return outP
-    except StandardError: # so many things could go wrong, can't be more specific.
+    except Exception: # so many things could go wrong, can't be more specific.
         raise NotImplementedError('Problem loading this data tile')
 
 def uabUtilAllTypeSave(fileName, variable_to_save):

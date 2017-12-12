@@ -8,12 +8,12 @@ class that handles the reading and iterating over files to be compatible with te
 
 call readerAction() to get your data for training/testing [whether it's a queue or reader is handled internally]
 """
-from __future__ import division
+
 import scipy.misc, os
 import numpy as np
 import tensorflow as tf
-import uabUtilreader
-import util_functions
+from . import uabUtilreader
+from . import util_functions
 
 
 #class to load all the possible slices of your data    
@@ -143,7 +143,7 @@ class ImageLabelReader(object):
             ind = 0
             image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
             for patch in uabUtilreader.patchify(block, tile_dim, patch_size, overlap=overlap):
-                print str(ind) +': '+ str(patch.shape)
+                print(str(ind) +': '+ str(patch.shape))
                 image_batch[ind, :, :, :] = patch
                 ind += 1
                 if ind == batch_size:
@@ -195,7 +195,7 @@ if __name__ == '__main__':
     imR = ImageLabelReader(0, [1, 2], parentDir, 'fileList.txt', (572, 572), (572, 572), batch_size,isTrain=1)
 
     testBatchSize = 11
-    print 'initialized reader'
+    print('initialized reader')
     with tf.Session() as sess:
         
         init = tf.global_variables_initializer()

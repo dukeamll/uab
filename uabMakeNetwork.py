@@ -7,7 +7,7 @@ Created on Sat Nov 18 15:28:16 2017
 classes to handle network making.  This is where you'll make the custom architectures etc
 """
 
-from __future__ import division
+
 import tensorflow as tf
 import numpy as np
 

@@ -42,10 +42,10 @@ Future work:
     (1) setExtensions(): Automatically handle pruning the list of processed tiles in the metadata if some were deleted by transferring the descriptions of previously processed tiles 
 """
 
-from __future__ import division
+
 import os, glob
-import uabRepoPaths
-import util_functions, uabPreprocClasses
+from . import uabRepoPaths
+from . import util_functions, uabPreprocClasses
 
 class uabCollection(object):
     
@@ -137,8 +137,8 @@ class uabCollection(object):
             
             if(doSplit):
                 #perform splitting of layers
-                kk = self.extensions.keys()
-                allChans = range(len(kk))
+                kk = list(self.extensions.keys())
+                allChans = list(range(len(kk)))
                 for chanId in allChans:
                     data = self.loadTileDataByExtension(self.tileList[0], chanId)
                     if(len(data.shape) == 3):
@@ -167,7 +167,7 @@ class uabCollection(object):
             for cnt, a in enumerate(metaContents):
                 self.extensions[a[0]] = a[1]
                 self.extDS.append([a[0], a[1]])
-                print('[%d] %s: %s, [ext: %s]' % (cnt, a[2].strip(), a[1].strip(), a[0].strip()))
+                print(('[%d] %s: %s, [ext: %s]' % (cnt, a[2].strip(), a[1].strip(), a[0].strip())))
         else:
             print('This file has not yet been created')
     

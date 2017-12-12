@@ -23,12 +23,12 @@ Instructions for overloading
 (3) extrName()
 
 """
-from __future__ import division
+
 import util_functions, os
 import numpy as np
 import tensorflow as tf
-import uabBlockparent
-from uabBlockparent import uabBlock
+from . import uabBlockparent
+from .uabBlockparent import uabBlock
 
 class uabPatchExtr(uabBlock):
     
@@ -76,13 +76,13 @@ class uabPatchExtr(uabBlock):
         elif(self.numPixOverlap > 0):
             #overlap by this number of pixels
             #add the last possible patch to ensure that you are covering all the pixels in the image
-            patchGridY = range(0, maxIm0, self.chipExtrSize[0] - self.numPixOverlap)
+            patchGridY = list(range(0, maxIm0, self.chipExtrSize[0] - self.numPixOverlap))
             patchGridY = patchGridY + [maxIm0]
-            patchGridX = range(0, maxIm1, self.chipExtrSize[1] - self.numPixOverlap)
+            patchGridX = list(range(0, maxIm1, self.chipExtrSize[1] - self.numPixOverlap))
             patchGridX = patchGridX + [maxIm1]
         
         Y,X = np.meshgrid(patchGridY,patchGridX)
-        return zip(Y.flatten(),X.flatten())
+        return list(zip(Y.flatten(),X.flatten()))
     
     
     def runAction(self, colObj):
@@ -133,4 +133,4 @@ class uabPatchExtr(uabBlock):
                     file.write("%s\n" % ' '.join(nmStr))
                             
                 if(np.mod(ind, uabPatchExtr.verbStep) == 0):
-                    print 'Finished tile %d' % (ind)
+                    print('Finished tile %d' % (ind))

@@ -23,9 +23,9 @@ Methods you must implement
     make the folder strucutre for the particular kind of block.  Here is an example for patch-extraction.  Returns a valid path starting after the results path
     Results/PatchExt/[PatchExtName]/[CollectionName]/files_ext.tif...
 """
-import uabRepoPaths
+from . import uabRepoPaths
 import os
-import util_functions
+from . import util_functions
 
 #dictionary that holds the 
 outputDirs = {'preproc':'TilePreproc', 'patchExt':'PatchExtr'}
@@ -75,7 +75,7 @@ class uabBlock(object):
     
     def runAtomic(self, colObj, stateFile):
         #checking the state file and running the block
-        print('Start running %s' % self.getName())
+        print(('Start running %s' % self.getName()))
         with open(stateFile, 'w') as f:
             f.write('Incomplete\n')
         
