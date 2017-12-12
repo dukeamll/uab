@@ -18,9 +18,9 @@ Implementation notes:
 
 import os
 import numpy as np
-from . import uabBlockparent
-from .uabBlockparent import uabBlock
-from . import util_functions
+import uabBlockparent
+from uabBlockparent import uabBlock
+import util_functions
 
 class uabPreprocClass(uabBlock):
     

@@ -44,8 +44,8 @@ Future work:
 
 
 import os, glob
-from . import uabRepoPaths
-from . import util_functions, uabPreprocClasses
+import uabRepoPaths
+import util_functions, uabPreprocClasses
 
 class uabCollection(object):
     

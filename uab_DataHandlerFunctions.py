@@ -27,8 +27,8 @@ Instructions for overloading
 import util_functions, os
 import numpy as np
 import tensorflow as tf
-from . import uabBlockparent
-from .uabBlockparent import uabBlock
+import uabBlockparent
+from uabBlockparent import uabBlock
 
 class uabPatchExtr(uabBlock):
     

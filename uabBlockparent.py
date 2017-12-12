@@ -23,9 +23,9 @@ Methods you must implement
     make the folder strucutre for the particular kind of block.  Here is an example for patch-extraction.  Returns a valid path starting after the results path
     Results/PatchExt/[PatchExtName]/[CollectionName]/files_ext.tif...
 """
-from . import uabRepoPaths
+import uabRepoPaths
 import os
-from . import util_functions
+import util_functions
 
 #dictionary that holds the 
 outputDirs = {'preproc':'TilePreproc', 'patchExt':'PatchExtr'}

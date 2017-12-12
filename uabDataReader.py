@@ -12,8 +12,8 @@ call readerAction() to get your data for training/testing [whether it's a queue 
 import scipy.misc, os
 import numpy as np
 import tensorflow as tf
-from . import uabUtilreader
-from . import util_functions
+import uabUtilreader
+import util_functions
 
 
 #class to load all the possible slices of your data    

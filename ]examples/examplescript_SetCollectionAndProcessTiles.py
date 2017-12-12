@@ -8,15 +8,15 @@ Created on Thu Dec  7 21:03:29 2017
 Example script for defining a collection and running a custom tile-operation that rescales the difference of two tiles
 """
 
-import uabRepoCode.uab_collectionFunctions
-import uabRepoCode.danielCustom.uabPreprocClasses
-import uabRepoCode.uabPreprocClasses
+import uab_collectionFunctions
+import danielCustom.uabPreprocClasses
+import uabPreprocClasses
 
-blCol = uabRepoCode.uab_collectionFunctions.uabCollection('inria_orgd')
+blCol = uab_collectionFunctions.uabCollection('inria_orgd')
 
-opDetObj = uabRepoCode.danielCustom.uabPreprocClasses.uabOperTileDiffRescale(13, 7)
+opDetObj = danielCustom.uabPreprocClasses.uabOperTileDiffRescale(13, 7)
 
-rescObj = uabRepoCode.uabPreprocClasses.uabPreprocMultChanOp([1,2,3], 'RDIFF.tif' , 'Linearly rescale difference between R & B', [1, 2],opDetObj)
+rescObj = uabPreprocClasses.uabPreprocMultChanOp([1,2,3], 'RDIFF.tif' , 'Linearly rescale difference between R & B', [1, 2],opDetObj)
 rescObj.run(blCol)
 
 blCol.readMetadata()
