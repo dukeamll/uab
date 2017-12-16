@@ -9,6 +9,8 @@ uabRepoPaths.py
 temp.py
 *.npy
 
+]task/
+
 # Created by .ignore support plugin (hsz.mobi)
 ### Python template
 # Byte-compiled / optimized / DLL files
