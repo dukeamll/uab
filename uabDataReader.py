@@ -19,26 +19,29 @@ import util_functions
 #class to load all the possible slices of your data    
 class ImageLabelReader(object):
     
-    def __init__(self, gtInds, dataInds, parentDir, chipFiles, chip_size, tile_size,  batchSize, nChannels = 1, overlap=0, padding=np.array((0,0)), dataAug='', random=True, isTrain = True):
-        #gtInds - indexes to the extensions of the ground truth.  Refers to the indexes from the collection
-        #dataInds - indexes to the extensions of the data.  Refers to the indexes from the collection
-        #parentDir - directory with the data (training: probably the output of the patch-extractor. testing: probably the raw data directory)
-        #chipFiles - list of patch/tile names.  Could also be the file list output from the patch-extractor
-        #chip-size - data-size of input to the network
-        #tile-size - the data size of the file specified in chipFiles (e.g., tile or chip).  If this is different from chip-size, then a patch extraction operation (with overlap & padding) occurs to operate on the data piecemeal.
-        #batchSize - number of chips to send to the network
-        #nChannels - number of channels for each input file
-        #overlap - in pixels (1 side), single number
-        #padding - in pixels (1 side), tuple (y,x)
-        #dataAug - augmentation (supports 'flip', 'rotate')
-        #random - order in which files are provided to the network
-        #isTrain - this pertains only to iterators (not queues).  The iterator needs an infinite loop during training or the resource gets exhausted.
+    def __init__(self, gtInds, dataInds, parentDir, chipFiles, chip_size, tile_size,  batchSize, nChannels = 1,
+                 overlap=0, padding=np.array((0,0)), block_mean=None, dataAug='', random=True, isTrain = True):
+        # gtInds - indexes to the extensions of the ground truth.  Refers to the indexes from the collection
+        # dataInds - indexes to the extensions of the data.  Refers to the indexes from the collection
+        # parentDir - directory with the data (training: probably the output of the patch-extractor. testing: probably the raw data directory)
+        # chipFiles - list of patch/tile names.  Could also be the file list output from the patch-extractor
+        # chip-size - data-size of input to the network
+        # tile-size - the data size of the file specified in chipFiles (e.g., tile or chip).  If this is different from chip-size, then a patch extraction operation (with overlap & padding) occurs to operate on the data piecemeal.
+        # batchSize - number of chips to send to the network
+        # nChannels - number of channels for each input file
+        # overlap - in pixels (1 side), single number
+        # padding - in pixels (1 side), tuple (y,x)
+        # block_mean: mean value of each channel
+        # dataAug - augmentation (supports 'flip', 'rotate')
+        # random - order in which files are provided to the network
+        # isTrain - this pertains only to iterators (not queues).  The iterator needs an infinite loop during training or the resource gets exhausted.
         
         self.chip_size = chip_size
+        self.block_mean = block_mean
             
-        #chipFiles:
-        #list of lists.  Each inner list is a list of the chips by their extension.  These are all the input feature maps for a particular tile location
-        #need to separate the file names into their own vectors
+        # chipFiles:
+        # list of lists.  Each inner list is a list of the chips by their extension.  These are all the input feature maps for a particular tile location
+        # need to separate the file names into their own vectors
         
         if(isinstance(chipFiles, str)):
             filename = os.path.join(parentDir,chipFiles) 
@@ -48,23 +51,24 @@ class ImageLabelReader(object):
             chipFiles = [a.strip().split(' ') for a in chipFiles]
         
         if(nChannels is not list):
-            self.nChannels = [nChannels for a in range(len(chipFiles[0]))]
+            self.nChannels = [a for a in range(len(chipFiles[0]))]
         else:
             self.nChannels = nChannels
                        
         el1 = chipFiles[0]
-        if(gtInds is not list):
+        if(type(gtInds) is not list):
             gtInds = [gtInds]
             
         self.gtInds = gtInds
         self.dataInds = dataInds
             
         procInds = self.gtInds + self.dataInds
-        #reorder the elements in el1 to get the extensions in the right order
+        # reorder the elements in el1 to get the extensions in the right order
         el1 = [el1[i] for i in procInds]
         self.nChannels = [self.nChannels[i] for i in procInds]
         
-        #need to decide whether this can be a queue based or a regular data-iterator.  Can only use a queue if all the files are jpg/png otherwise need to use the slower data-reader
+        # need to decide whether this can be a queue based or a regular data-iterator.
+        # Can only use a queue if all the files are jpg/png otherwise need to use the slower data-reader
         self.fileExts = [a.split('.')[-1] for a in el1]
         extExistence = [a in ['jpg','png','jpeg'] for a in self.fileExts]
         if(all(extExistence) and isTrain == 1):
@@ -80,7 +84,7 @@ class ImageLabelReader(object):
             self.isQueue = 0
                 
             if(isTrain):
-                self.readManager = self.readFromDiskIteratorTrain(parentDir, chipFiles, batchSize, tile_size, self.chip_size, random, overlap, padding, dataAug)
+                self.readManager = self.readFromDiskIteratorTrain(parentDir, chipFiles, batchSize, self.chip_size, random, padding, dataAug)
             else:
                 self.readManager = self.readFromDiskIteratorTest(parentDir, chipFiles, batchSize, tile_size, self.chip_size, overlap, padding)
     
@@ -90,11 +94,13 @@ class ImageLabelReader(object):
         else:
             return next(self.readManager)
     
-    def readFromDiskIteratorTrain(self, image_dir, chipFiles, batch_size, tile_dim, patch_size, random, overlap=0, padding=(0,0),dataAug=''):
+    def readFromDiskIteratorTrain(self, image_dir, chipFiles, batch_size, patch_size, random, padding=(0,0),dataAug=''):
         # this is a iterator for training
         
         if(random):
             idx = np.random.permutation(len(chipFiles))
+        else:
+            idx = np.arange(stop=len(chipFiles))
         nDims = len(chipFiles[0])
         while True:
             image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
@@ -134,7 +140,9 @@ class ImageLabelReader(object):
                     img = np.expand_dims(img, axis=2)
                 nDims += img.shape[2]
                 blockList.append(img)
-            block = np.dstack(blockList)
+            block = np.dstack(blockList).astype(np.float32)
+            if self.block_mean is not None:
+                block -= self.block_mean
         
             if (np.array(padding) > 0).any():
                 block = uabUtilreader.pad_block(block, padding)
@@ -143,7 +151,7 @@ class ImageLabelReader(object):
             ind = 0
             image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
             for patch in uabUtilreader.patchify(block, tile_dim, patch_size, overlap=overlap):
-                print(str(ind) +': '+ str(patch.shape))
+                # print(str(ind) +': '+ str(patch.shape))
                 image_batch[ind, :, :, :] = patch
                 ind += 1
                 if ind == batch_size:

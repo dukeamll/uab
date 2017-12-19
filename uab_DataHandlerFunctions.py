@@ -27,15 +27,17 @@ Instructions for overloading
 import util_functions, os
 import numpy as np
 import tensorflow as tf
+from tqdm import tqdm
 import uabBlockparent
 from uabBlockparent import uabBlock
 
 class uabPatchExtr(uabBlock):
     
     fname = 'fileList.txt'
-    verbStep = 10
+    #verbStep = 10
     
-    def __init__(self, runChannels, name='Reg', cSize=(224,224), numPixOverlap = 0,extSave=None):
+    def __init__(self, runChannels, name='Reg', cSize=(224,224), numPixOverlap = 0, extSave=None,
+                 isTrain=False, gtInd=-1):
         super(uabPatchExtr, self).__init__(runChannels, name)
         #chip size
         self.chipExtrSize = cSize
@@ -43,6 +45,8 @@ class uabPatchExtr(uabBlock):
         self.numPixOverlap = numPixOverlap
         self.coord = tf.train.Coordinator()
         self.saveExts = extSave
+        self.isTrain = isTrain
+        self.gtInd = gtInd
     
     def extrName(self):
         return ''
@@ -61,7 +65,9 @@ class uabPatchExtr(uabBlock):
         return uabBlock.getBlockDir(os.path.join(uabBlockparent.outputDirs['patchExt'], colObj.colName, self.algoName()))
     
     def makeGrid(self, tileSz):
-        #this function should be changed in the subclass if desired.  Default behavior is to extract chips at fixed locations.  Output coordinates for Y,X as a list (not two lists)
+        #this function should be changed in the subclass if desired.
+        # Default behavior is to extract chips at fixed locations.
+        # Output coordinates for Y,X as a list (not two lists)
         
         #make the grid of indexes at which to extract patches
         #get the boundary of the tile given the patchsize
@@ -73,7 +79,8 @@ class uabPatchExtr(uabBlock):
             DS1 = np.ceil(tileSz[1]/self.chipExtrSize[1])
             patchGridY = np.floor(np.linspace(0,maxIm0,DS0))
             patchGridX = np.floor(np.linspace(0,maxIm1,DS1))
-        elif(self.numPixOverlap > 0):
+        else:
+        #elif(self.numPixOverlap > 0):
             #overlap by this number of pixels
             #add the last possible patch to ensure that you are covering all the pixels in the image
             patchGridY = list(range(0, maxIm0, self.chipExtrSize[0] - self.numPixOverlap))
@@ -83,9 +90,70 @@ class uabPatchExtr(uabBlock):
         
         Y,X = np.meshgrid(patchGridY,patchGridX)
         return list(zip(Y.flatten(),X.flatten()))
-    
-    
+
     def runAction(self, colObj):
+        # function to extract the chips from the tiles
+
+        gridList = self.makeGrid(colObj.tileSize)
+
+        directory = self.getDirectoryPaths(colObj)
+        # extract chips for all the specified extensions
+
+        # precompute extensions
+        fileExts = []
+        for cnt, chanId in enumerate(self.runChannels):
+            ext, _ = colObj.getExtensionInfoById(chanId)
+            if (self.saveExts is not None):
+                sExt = ext.split('.')
+                fileExts.append(sExt[0] + '.' + self.saveExts[cnt])
+            else:
+                fileExts.append(ext)
+
+        f_temp = []
+        for i in range(len(fileExts)):
+            f_temp.append([])
+        for ind, tilename in enumerate(tqdm(colObj.dataListForRun)):
+            if self.isTrain:
+                # check if gt exists for this tile
+                try:
+                    colObj.loadTileDataByExtension(tilename, self.runChannels[self.gtInd])
+                except IOError:
+                    # skip this if there's not enough channels
+                    continue
+            for cnt, (ext, chanId) in enumerate(zip(fileExts, self.runChannels)):
+                cIm = colObj.loadTileDataByExtension(tilename, chanId)
+                nDims = cIm.shape
+                for coordList in gridList:
+                    # extract patches for all the channels at coordinate location.
+                    # This is done so that the file containing patch names can have all
+                    # the extracted patches of one location on a single line
+                    x1 = int(coordList[0])
+                    x2 = int(coordList[1])
+                    finNm = tilename + '_y%dx%d_%s' % (x1, x2, ext)
+
+                    fPath = os.path.join(directory, finNm)
+                    isExt = util_functions.read_or_new_pickle(fPath, toLoad=0)
+                    if (isExt == 0):
+                        # extract a patch from the image
+                        if (len(nDims) == 2):
+                            chipDat = cIm[x1:x1 + self.chipExtrSize[0], x2:x2 + self.chipExtrSize[1]]
+                        else:
+                            chipDat = cIm[x1:x1 + self.chipExtrSize[0], x2:x2 + self.chipExtrSize[1], :]
+
+                        util_functions.read_or_new_pickle(fPath, toSave=1, variable_to_save=chipDat)
+
+                    f_temp[cnt].append(finNm)
+
+            with open(os.path.join(directory, uabPatchExtr.fname), 'w') as file:
+                for i in range(len(f_temp[0])):
+                    s = []
+                    for j in range(len(f_temp)):
+                        s.append(f_temp[j][i])
+                    file.write('{}\n'.format(' '.join(s)))
+
+    
+    
+    '''def runAction(self, colObj):
         #function to extract the chips from the tiles
         
         gridList = self.makeGrid(colObj.tileSize)
@@ -104,7 +172,7 @@ class uabPatchExtr(uabBlock):
                 fileExts.append(ext)
         
         with open(os.path.join(directory,uabPatchExtr.fname),'w') as file:
-            for ind, tilename in enumerate(colObj.dataListForRun):
+            for ind, tilename in enumerate(tqdm(colObj.dataListForRun)):
                 for coordList in gridList:
                     #extract patches for all the channels at coordinate location.  This is done so that the file containing patch names can have all the extracted patches of one location on a single line
                     nmStr = []
@@ -113,13 +181,17 @@ class uabPatchExtr(uabBlock):
                         #get the output file's name
                         x1 = int(coordList[0])
                         x2 = int(coordList[1])
-                        finNm = tilename+'_y%dx%d_%s'%(x1, x2,ext)
+                        finNm = tilename+'_y%dx%d_%s'%(x1, x2, ext)
                         nmStr.append(finNm)
                         
                         fPath = os.path.join(directory, finNm)
                         isExt = util_functions.read_or_new_pickle(fPath, toLoad=0)
                         if(isExt == 0):
-                            cIm = colObj.loadTileDataByExtension(tilename, chanId)
+                            try:
+                                cIm = colObj.loadTileDataByExtension(tilename, chanId)
+                            except IOError:
+                                # skip this if there's not enough channels
+                                continue
                             
                             #extract a patch from the image
                             nDims = cIm.shape
@@ -132,5 +204,5 @@ class uabPatchExtr(uabBlock):
                         
                     file.write("%s\n" % ' '.join(nmStr))
                             
-                if(np.mod(ind, uabPatchExtr.verbStep) == 0):
-                    print('Finished tile %d' % (ind))
+                #if(np.mod(ind, uabPatchExtr.verbStep) == 0):
+                #    print('Finished tile %d' % (ind))'''

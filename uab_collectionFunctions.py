@@ -94,7 +94,7 @@ class uabCollection(object):
             with open(colFileName, 'r') as file:
                 return [a.strip() for a in file.readlines()]
         else:
-            filenames = glob.glob(os.path.join(self.imDirectory, uabCollection.dataDirnames['data'], uabCollection.colDirnames[colDir],'*'))
+            filenames = glob.glob(os.path.join(self.imDirectory, uabCollection.dataDirnames['data'], uabCollection.colDirnames[colDir], '*.*'))
             tilenames = sorted(list(set(['_'.join(a.split(os.sep)[-1].split('_')[:-1]) for a in filenames])))
             with open(colFileName, 'w') as file:
                 file.write('\n'.join(tilenames))

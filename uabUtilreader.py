@@ -74,7 +74,9 @@ def pad_block(block, pad):
     _, _, c = block.shape
     for i in range(c):
         padded_block.append(np.pad(block[:, :, i],
-                                   (pad.astype(np.int), pad.astype(np.int)), 'symmetric'))
+                                   ((pad[0].astype(np.int), pad[1].astype(np.int)),
+                                   (pad[0].astype(np.int), pad[1].astype(np.int))),
+                                   'symmetric'))
     return np.dstack(padded_block)            
 
 def un_patchify(blocks, tile_dim, patch_size, overlap=0):
@@ -94,6 +96,7 @@ def un_patchify(blocks, tile_dim, patch_size, overlap=0):
             image[corner_h:corner_h+patch_size[0], corner_w:corner_w+patch_size[1], :] += blocks[cnt-1, :, :, :]
     return image
 
+
 def un_patchify_shrink(blocks, tile_dim, tile_dim_output, patch_size, patch_size_output, overlap=0):
     _, _, _, c = blocks.shape
     image = np.zeros((tile_dim_output[0], tile_dim_output[1], c))
@@ -108,5 +111,5 @@ def un_patchify_shrink(blocks, tile_dim, tile_dim_output, patch_size, patch_size
     for corner_h in patch_grid_h:
         for corner_w in patch_grid_w:
             cnt += 1
-            image[corner_h:corner_h+patch_size_output[0], corner_w:corner_w+patch_size_output[1], :] += blocks[cnt-1, :, :, :]
+            image[corner_h:corner_h + patch_size_output[0], corner_w:corner_w + patch_size_output[1], :] += blocks[cnt - 1, :, :, :]
     return image

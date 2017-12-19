@@ -23,8 +23,6 @@ elif platform == 'linux2':
 """    
 
 #this example is relevant if you have 1 folder on 1 machine that has both the data and the results.  Your setup may be different
-#parentDir = '/home/jordan/Daniel/USSOCOM-BDC/dataFiles/'
-parentDir = r'/media/ei-edl01/data/remote_sensing_data/'
-#dataPath = os.path.join(parentDir, 'data')
+parentDir = r'/media/ei-edl01/data/uab_datasets'
 dataPath = parentDir
-resPath = os.path.join(parentDir, 'Results')
+resPath = r'/hdd/uab_datasets/Results'

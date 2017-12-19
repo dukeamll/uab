@@ -70,7 +70,7 @@ def uabUtilAllTypeLoad(fileName):
         
         return outP
     except Exception: # so many things could go wrong, can't be more specific.
-        raise NotImplementedError('Problem loading this data tile')
+        raise IOError('Problem loading this data tile')
 
 def uabUtilAllTypeSave(fileName, variable_to_save):
     #handles the loading of a file of all types in python
@@ -118,8 +118,8 @@ def read_data(data_list, random_rotation=False, random_flip=False):
     data_chunk = np.zeros((patch_num, w, h, c))
     labels_chunk = np.zeros((patch_num, w, h, 1))
     for i in range(patch_num):
-        data_chunk[i,:,:,:] = data_augmentation(scipy.misc.imread(data_list[i][0]),                                               random_rotation=random_rotation, random_flip=random_flip)
-        labels_chunk[i,:,:,:] = data_augmentation(scipy.misc.imread(data_list[i][1]),                                               random_rotation=random_rotation, random_flip=random_flip)
+        data_chunk[i,:,:,:] = data_augmentation(scipy.misc.imread(data_list[i][0]), random_rotation=random_rotation, random_flip=random_flip)
+        labels_chunk[i,:,:,:] = data_augmentation(scipy.misc.imread(data_list[i][1]), random_rotation=random_rotation, random_flip=random_flip)
         
     return data_chunk, labels_chunk  
 
@@ -151,11 +151,15 @@ def get_pred_labels(pred):
     :param pred: output of CNN softmax function
     :return: predicted labels
     """
-    n, h, w, c = pred.shape
-    outputs = np.zeros((n, h, w, 1), dtype=np.uint8)
-    for i in range(n):
-        outputs[i] = np.expand_dims(np.argmax(pred[i,:,:,:], axis=2), axis=2)
-    return outputs
+    if len(pred.shape) == 4:
+        n, h, w, c = pred.shape
+        outputs = np.zeros((n, h, w, 1), dtype=np.uint8)
+        for i in range(n):
+            outputs[i] = np.expand_dims(np.argmax(pred[i,:,:,:], axis=2), axis=2)
+        return outputs
+    elif len(pred.shape) == 3:
+        outputs = np.argmax(pred, axis=2)
+        return outputs
 
 
 def decode_labels(label, num_images=10):
@@ -175,3 +179,13 @@ def decode_labels(label, num_images=10):
                 pixels[j,k] = label_colors[np.int(label[i,j,k,0])]
         outputs[i] = pixels
     return outputs
+
+
+def iou_metric(truth, pred, truth_val=255):
+    truth = truth / truth_val
+    pred = pred / truth_val
+    truth = truth.flatten()
+    pred = pred.flatten()
+    intersect = truth*pred
+    return sum(intersect == 1) / \
+           (sum(truth == 1)+sum(pred == 1)-sum(intersect == 1))
