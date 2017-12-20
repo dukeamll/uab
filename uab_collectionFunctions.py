@@ -243,8 +243,8 @@ class uabCollection(object):
             meta['city_names'] = city_names
 
             # get class num and class info
-            class_num = len(class_info)
             class_info = class_info.split(',')
+            class_num = len(class_info)
             meta['class_num'] = class_num
             meta['class_info'] = class_info
 

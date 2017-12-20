@@ -229,7 +229,7 @@ class uabPatchExtrRand(uabBlock):
     def runAction(self, colObj):
         # function to extract the chips from the tiles
 
-        gridList = self.makeGrid([colObj.tileSize[0] + self.pad, colObj.tileSize[1] + self.pad])
+        gridList = self.makeGrid([colObj.tileSize[0] + self.pad, colObj.tileSize[1] + self.pad], self.numPerTile)
 
         directory = self.getDirectoryPaths(colObj)
         # extract chips for all the specified extensions
@@ -257,7 +257,8 @@ class uabPatchExtrRand(uabBlock):
                     continue
             for cnt, (ext, chanId) in enumerate(zip(fileExts, self.runChannels)):
                 cIm = colObj.loadTileDataByExtension(tilename, chanId)
-                cIm = uabUtilreader.pad_block(cIm, self.pad)
+                if self.pad > 0:
+                    cIm = np.pad(cIm, ((self.pad, self.pad), (self.pad, self.pad)), 'symmetric')
                 nDims = cIm.shape
                 for coordList in gridList:
                     # extract patches for all the channels at coordinate location.
