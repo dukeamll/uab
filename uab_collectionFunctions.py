@@ -43,7 +43,9 @@ Future work:
 """
 
 
-import os, glob
+import os, glob, pickle
+import numpy as np
+from tqdm import tqdm
 import uabRepoPaths
 import util_functions, uabPreprocClasses
 
@@ -55,6 +57,7 @@ class uabCollection(object):
     
     metaFilename = 'collection.txt'
     tileNamesFile = 'colTileNames.txt'
+    metaInfoFile = 'meta.npy'                       # file to store all meta information
     
     def __init__(self, colN, splitChans = 1):
         #full path to data directory
@@ -191,6 +194,80 @@ class uabCollection(object):
     def getDataNameByTile(self, dirn, tileName, ext):
         #convenience function to associate tile name with corresponding data
         return os.path.join(self.imDirectory, uabCollection.dataDirnames['data'], dirn, tileName + '_' + ext)
+
+    def getChannelMeans(self, extId):
+        """
+        Get means of channels given by extension ids, metainfo has to exist for this function
+        :param extId: id of extensions to calculate channel mean, can be a int or list
+        :return: np array of meta data
+        """
+        metaInfoName = os.path.join(self.imDirectory, uabCollection.dataDirnames['meta'], uabCollection.metaInfoFile)
+        assert os.path.exists(metaInfoName)
+        means = np.zeros(len(extId))
+
+        with open(metaInfoName, 'rb') as f:
+            meta = pickle.load(f)
+        mean_info = meta['mean']
+
+        for cnt, eid in enumerate(extId):
+            means[cnt] = mean_info[eid]
+
+        return means
+
+    def getMetaDataInfo(self, extId, class_info='background,building', forcerun=False):
+        """
+        Write info to meta.npy, meta data include tile numbers; city list; class num; class info, tile dimension,
+        and channel means
+        :param extId: id of extensions to calculate channel mean, can be a int or list
+        :param class_info: description of classes, split by ','
+        :param forcerun: if True, the meta file will be remade
+        :return: a dictionary of meta data
+        """
+        metaInfoName = os.path.join(self.imDirectory, uabCollection.dataDirnames['meta'], uabCollection.metaInfoFile)
+
+        if os.path.exists(metaInfoName) and not forcerun:
+            with open(metaInfoName, 'rb') as f:
+                meta = pickle.load(f)
+        else:
+            meta = {}
+            # get tile numbers
+            tile_names = self.getImLists()
+            tile_num = len(tile_names)
+            meta['tile_num'] = tile_num
+
+            # get city list
+            from string import digits
+            remove_digits = str.maketrans('', '', digits)
+            city_names = [s.translate(remove_digits) for s in tile_names]
+            city_names = list(set(city_names))
+            meta['city_names'] = city_names
+
+            # get class num and class info
+            class_num = len(class_info)
+            class_info = class_info.split(',')
+            meta['class_num'] = class_num
+            meta['class_info'] = class_info
+
+            # get channel mean
+            if type(extId) is not list:
+                extId = [extId]
+            means = {}
+            for ext in extId:
+                # load a tile to get shape info
+                img = self.loadTileDataByExtension(tile_names[0], ext)
+                shape_info = img.shape
+                assert len(shape_info) == 2
+                channel_mean = 0
+                for tile in tqdm(tile_names):
+                    img = self.loadTileDataByExtension(tile, ext)
+                    channel_mean += np.mean(img)
+                means[ext] = channel_mean/tile_num
+            meta['mean'] = means
+
+            # save file
+            with open(metaInfoName, 'wb') as f:
+                pickle.dump(meta, f)
+        return meta
     
 """    
     def getAllTileByDirAndExt(self, dirn, ext):
