@@ -306,8 +306,8 @@ class UnetModelCrop(UnetModel):
         # TODO calculate the padding pixels
         return 184
 
-    def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, isTrain=False,
-            img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=0,
+    def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
+            isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=0,
             tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1):
         os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
         os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -320,7 +320,10 @@ class UnetModelCrop(UnetModel):
                 saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
                 # load model
                 if pretrained_model_dir is not None:
-                    self.load(pretrained_model_dir, sess, saver)
+                    if layers2load is not None:
+                        self.load_weights(pretrained_model_dir, layers2load)
+                    else:
+                        self.load(pretrained_model_dir, sess, saver)
                 threads = tf.train.start_queue_runners(coord=coord, sess=sess)
                 try:
                     train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)

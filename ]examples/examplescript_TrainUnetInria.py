@@ -32,7 +32,7 @@ epochs=100                      # total number of epochs to rum
 start_filter_num=32             # the number of filters at the first layer
 n_train = 8000                  # number of samples per epoch
 n_valid = 1000                  # number of samples every validation step
-model_name = 'inria_aug'      # a suffix for model name
+model_name = 'inria_aug'        # a suffix for model name
 GPU = 1                         # which gpu to use
 
 # make network
