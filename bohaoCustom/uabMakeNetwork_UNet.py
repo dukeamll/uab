@@ -20,6 +20,9 @@ class UnetModel(network.Network):
         self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
                                                             input_size[1] * 3, 3], name='validation_images')
         self.update_ops = None
+        self.config = None
+        self.n_train = 0
+        self.n_valid = 0
 
     def make_ckdir(self, ckdir, patch_size):
         if type(patch_size) is list:
@@ -70,8 +73,9 @@ class UnetModel(network.Network):
             load_dict[feed_layer] = feed_layer
         tf.contrib.framework.init_from_checkpoint(ckpt_dir, load_dict)
 
-    def make_learning_rate(self):
-        self.learning_rate = tf.train.exponential_decay(self.lr, self.global_step, self.ds,
+    def make_learning_rate(self, n_train):
+        self.learning_rate = tf.train.exponential_decay(self.lr, self.global_step,
+                                                        tf.cast(n_train/self.bs * self.ds, tf.int32),
                                                         self.dr, staircase=True)
 
     def make_loss(self, y_name, loss_type='xent'):
@@ -92,7 +96,7 @@ class UnetModel(network.Network):
 
     def make_optimizer(self):
         with tf.control_dependencies(self.update_ops):
-            self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
+            self.optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss, global_step=self.global_step)
 
     def make_summary(self):
         tf.summary.histogram('Predicted Prob', tf.argmax(tf.nn.softmax(self.pred), 1))
@@ -100,19 +104,28 @@ class UnetModel(network.Network):
         tf.summary.scalar('learning rate', self.learning_rate)
         self.summary = tf.summary.merge_all()
 
+    def train_config(self, x_name, y_name, n_train, n_valid, patch_size, ckdir, loss_type='xent'):
+        self.make_loss(y_name, loss_type)
+        self.make_learning_rate(n_train)
+        self.make_update_ops(x_name, y_name)
+        self.make_optimizer()
+        self.make_ckdir(ckdir, patch_size)
+        self.make_summary()
+        self.config = tf.ConfigProto()
+        self.n_train = n_train
+        self.n_valid = n_valid
+
     def train(self, x_name, y_name, n_train, sess, summary_writer, n_valid=1000,
-              train_iterator=None, train_reader=None, valid_iterator=None, valid_reader=None,
-              image_summary=None, verb_step=100, save_epoch=5):
+              train_reader=None, valid_reader=None,
+              image_summary=None, verb_step=100, save_epoch=5,
+              img_mean=np.array((0, 0, 0), dtype=np.float32)):
         # define summary operations
         valid_cross_entropy_summary_op = tf.summary.scalar('xent_validation', self.valid_cross_entropy)
         valid_image_summary_op = tf.summary.image('Validation_images_summary', self.valid_images,
                                                   max_outputs=10)
         for epoch in range(self.epochs):
             for step in range(0, n_train, self.bs):
-                if train_iterator is not None:
-                    X_batch, y_batch = next(train_iterator)
-                else:
-                    X_batch, y_batch = sess.run(train_reader)
+                X_batch, y_batch = train_reader.readerAction(sess)
                 _, self.global_step_value = sess.run([self.optimizer, self.global_step],
                                                      feed_dict={self.inputs[x_name]:X_batch,
                                                                 self.inputs[y_name]:y_batch,
@@ -128,10 +141,7 @@ class UnetModel(network.Network):
             # validation
             cross_entropy_valid_mean = []
             for step in range(0, n_valid, self.bs):
-                if valid_iterator is not None:
-                    X_batch_val, y_batch_val = next(valid_iterator)
-                else:
-                    X_batch_val, y_batch_val = sess.run(valid_reader)
+                X_batch_val, y_batch_val = valid_reader.readerAction(sess)
                 pred_valid, cross_entropy_valid = sess.run([self.pred, self.loss],
                                                            feed_dict={self.inputs[x_name]: X_batch_val,
                                                                       self.inputs[y_name]: y_batch_val,
@@ -146,7 +156,8 @@ class UnetModel(network.Network):
             if image_summary is not None:
                 valid_image_summary = sess.run(valid_image_summary_op,
                                                feed_dict={self.valid_images:
-                                                              image_summary(X_batch_val[:,:,:,:3], y_batch_val, pred_valid)})
+                                                              image_summary(X_batch_val[:,:,:,:3], y_batch_val, pred_valid,
+                                                                            img_mean)})
                 summary_writer.add_summary(valid_image_summary, self.global_step_value)
 
             if epoch % save_epoch == 0:
@@ -161,6 +172,41 @@ class UnetModel(network.Network):
             result.append(pred)
         result = np.vstack(result)
         return result
+
+    def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, isTrain=False,
+            img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=0,
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1):
+        os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+        if isTrain:
+            coord = tf.train.Coordinator()
+            with tf.Session(config=self.config) as sess:
+                # init model
+                init = tf.global_variables_initializer()
+                sess.run(init)
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                # load model
+                if pretrained_model_dir is not None:
+                    self.load(pretrained_model_dir, sess, saver)
+                threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+                try:
+                    train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
+                    self.train('X', 'Y', self.n_train, sess, train_summary_writer,
+                               n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
+                               image_summary=util_functions.image_summary, img_mean=img_mean,
+                               verb_step=verb_step, save_epoch=save_epoch)
+                finally:
+                    coord.request_stop()
+                    coord.join(threads)
+                    saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)
+        else:
+            with tf.Session() as sess:
+                init = tf.global_variables_initializer()
+                sess.run(init)
+                self.load(pretrained_model_dir, sess)
+                result = self.test('X', sess, test_reader)
+            image_pred = uabUtilreader.un_patchify(result, tile_size, patch_size)
+            return util_functions.get_pred_labels(image_pred) * truth_val
 
 
 class UnetModelCrop(UnetModel):
@@ -233,7 +279,6 @@ class UnetModelCrop(UnetModel):
         for layer_name in layers_list:
             feed_layer = layer_name + '/'
             load_dict[feed_layer] = feed_layer
-        #tf.train.init_from_checkpoint(ckpt_dir, load_dict)
         tf.contrib.framework.init_from_checkpoint(ckpt_dir, load_dict)
 
         layerconv1_kernel = tf.trainable_variables()[0]
@@ -256,24 +301,46 @@ class UnetModelCrop(UnetModel):
         # TODO calculate the padding pixels
         return 184
 
-    def run(self, model_dir, rManager, tile_size, input_size, truth_val=255):
+    def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, isTrain=False,
+            img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=0,
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1):
         os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-        pad = self.get_overlap()
-
-        with tf.Session() as sess:
-            init = tf.global_variables_initializer()
-            sess.run(init)
-            self.load(model_dir, sess)
-            result = self.test('X', sess, rManager)
-
-        image_pred = uabUtilreader.un_patchify_shrink(result,
-                                                      [tile_size[0] + pad, tile_size[1] + pad],
-                                                      tile_size,
-                                                      input_size,
-                                                      [input_size[0] - pad, input_size[1] - pad],
-                                                      overlap=pad)
-        return util_functions.get_pred_labels(image_pred) * truth_val
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+        if isTrain:
+            coord = tf.train.Coordinator()
+            with tf.Session(config=self.config) as sess:
+                # init model
+                init = tf.global_variables_initializer()
+                sess.run(init)
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                # load model
+                if pretrained_model_dir is not None:
+                    self.load(pretrained_model_dir, sess, saver)
+                threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+                try:
+                    train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
+                    self.train('X', 'Y', self.n_train, sess, train_summary_writer,
+                               n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
+                               image_summary=util_functions.image_summary, img_mean=img_mean,
+                               verb_step=verb_step, save_epoch=save_epoch)
+                finally:
+                    coord.request_stop()
+                    coord.join(threads)
+                    saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)
+        else:
+            pad = self.get_overlap()
+            with tf.Session() as sess:
+                init = tf.global_variables_initializer()
+                sess.run(init)
+                self.load(pretrained_model_dir, sess)
+                result = self.test('X', sess, test_reader)
+            image_pred = uabUtilreader.un_patchify_shrink(result,
+                                                          [tile_size[0] + pad, tile_size[1] + pad],
+                                                          tile_size,
+                                                          patch_size,
+                                                          [patch_size[0] - pad, patch_size[1] - pad],
+                                                          overlap=pad)
+            return util_functions.get_pred_labels(image_pred) * truth_val
 
 
 class UnetModel_Appendix(UnetModelCrop):

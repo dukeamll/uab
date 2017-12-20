@@ -49,11 +49,11 @@ def doDataAug(data, dataMeta, augType):
     #dataMeta is a list of info (e.g. label, number of channels)
     
     if 'flip' in augType:
-        image = image_flipping(data, dataMeta)
+        data = image_flipping(data, dataMeta)
     if 'rotate' in augType:
-        image = image_rotating(data, dataMeta)
+        data = image_rotating(data, dataMeta)
     
-    return image
+    return data
 
 def crop_image(block, size, corner):
     return block[corner[0]:corner[0]+size[0],corner[1]:corner[1]+size[1],:]

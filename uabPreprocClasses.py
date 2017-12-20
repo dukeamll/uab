@@ -83,7 +83,9 @@ class uabPreprocSplit(uabPreprocClass):
 #class to perform an operation on two tiles (e.g., difference of two)                    
 class uabPreprocMultChanOp(uabPreprocClass):
     def __init__(self, runChannels, extension, description, chans, opDetails, name = 'MultChanOp'):
-        #runChannels is an index into the list of tile-maps that exist for this collection.  chans are the indexes of channels to process.  opDetails is a class of type operator (see uabPreProcClasses.py)
+        # runChannels is an index into the list of tile-maps that exist for this collection.
+        # chans are the indexes of channels to process.
+        # opDetails is a class of type operator (see uabPreProcClasses.py)
         super(uabPreprocMultChanOp, self).__init__(runChannels, name, extension, description)
         self.opChans = chans
         self.opDet = opDetails
@@ -98,11 +100,16 @@ class uabPreprocMultChanOp(uabPreprocClass):
             code = util_functions.read_or_new_pickle(path)
             
             if(code == 0):
-                #get a list of all the tiles to operate on based on the specified channels to run on 
+                # get a list of all the tiles to operate on based on the specified channels to run on
                 tileData = []
                 for tileChanId in self.opChans:
-                    tileData.append(colObj.loadTileDataByExtension(tile, tileChanId))
-                
-                opTile = self.opDet.run(tileData)
+                    try:
+                        tileData.append(colObj.loadTileDataByExtension(tile, tileChanId))
+                    except IOError:
+                        continue
 
-                util_functions.read_or_new_pickle(path,toSave=1, variable_to_save = opTile)
+                if len(tileData) == 0:
+                    continue
+
+                opTile = self.opDet.run(tileData)
+                util_functions.read_or_new_pickle(path, toSave=1, variable_to_save=opTile)

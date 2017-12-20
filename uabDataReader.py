@@ -51,7 +51,7 @@ class ImageLabelReader(object):
             chipFiles = [a.strip().split(' ') for a in chipFiles]
         
         if(nChannels is not list):
-            self.nChannels = [a for a in range(len(chipFiles[0]))]
+            self.nChannels = [nChannels for a in range(len(chipFiles[0]))]
         else:
             self.nChannels = nChannels
                        
@@ -73,6 +73,7 @@ class ImageLabelReader(object):
         extExistence = [a in ['jpg','png','jpeg'] for a in self.fileExts]
         if(all(extExistence) and isTrain == 1):
             self.isQueue = 1
+
             fnameList = []
             for i in procInds:
                 fnameList.append(tf.convert_to_tensor([os.path.join(parentDir,a[i]) for a in chipFiles], dtype=tf.string))
@@ -88,8 +89,8 @@ class ImageLabelReader(object):
             else:
                 self.readManager = self.readFromDiskIteratorTest(parentDir, chipFiles, batchSize, tile_size, self.chip_size, overlap, padding)
     
-    def readerAction(self, num_elements, sess=None):
-        if(self.isQueue):
+    def readerAction(self, sess=None):
+        if self.isQueue:
             return sess.run(self.readManager)
         else:
             return next(self.readManager)
@@ -115,7 +116,10 @@ class ImageLabelReader(object):
                     nDims += img.shape[2]
                     blockList.append(img)
                 block = np.dstack(blockList)
-                
+
+                if self.block_mean is not None:
+                    block -= self.block_mean
+
                 if dataAug != '':
                     augDat = uabUtilreader.doDataAug(block, nDims, dataAug)
                 else:
@@ -127,7 +131,7 @@ class ImageLabelReader(object):
                 image_batch[cnt % batch_size, :, :, :] = augDat
                
                 if((cnt+1) % batch_size == 0):
-                    yield image_batch
+                    yield image_batch[:, :, : 1:], image_batch[:, :, :, :1]
     
     def readFromDiskIteratorTest(self, image_dir, chipFiles, batch_size, tile_dim, patch_size, overlap=0, padding=(0,0)):
         # this is a iterator for test
@@ -165,33 +169,38 @@ class ImageLabelReader(object):
     def dequeue(self, num_elements):
         #puts the images in the queue using the iterator
         batches = tf.train.batch(self.dataLists, num_elements)
-        return batches 
+        return batches[:, :, :, 1:], batches[:, :, :, :1]
     
     def readFromDiskQueue(self, dataAug=''):
-        #actually read images from disk
-        #apply augmentations (string interface)
-        #last input is always the label
+        # actually read images from disk
+        # apply augmentations (string interface)
+        # last input is always the label
         
         queueOutput = []
         totChannels = np.sum(self.nChannels)
         for i in range(len(self.internalQueue)):
             qData = tf.read_file(self.internalQueue[i])
-            #depending on whether it is a jpeg or png load it that way
+            # depending on whether it is a jpeg or png load it that way
             if(self.fileExts[i] == 'jpg'):
                 ldData = tf.image.decode_jpeg(qData, channels=self.nChannels[i])
             elif(self.fileExts[i] == 'png'):
                 ldData = tf.image.decode_png(qData, channels=self.nChannels[i])
+            else:
+                ldData = tf.image.decode_image(qData, channels=self.nChannels[i])
                 
             rldData = tf.image.resize_images(ldData, self.chip_size)
+            queueOutput.append(rldData)
+        queueOutput = tf.squeeze(tf.stack(queueOutput, axis=2), axis=-1)
+
+        if self.block_mean is not None:
+            queueOutput -= self.block_mean
             
-            if dataAug:
-                augDat = uabUtilreader.doDataAug(rldData, totChannels, dataAug)
-            else:
-                augDat = rldData
-            
-            queueOutput.append(augDat)
+        if len(dataAug) > 0:
+            augDat = uabUtilreader.doDataAug(queueOutput, totChannels, dataAug)
+        else:
+            augDat = queueOutput
         
-        return queueOutput
+        return [augDat]
 
 
 #for debugging purposes
@@ -200,7 +209,7 @@ if __name__ == '__main__':
     
     coord = tf.train.Coordinator()
     batch_size = 10
-    imR = ImageLabelReader(0, [1, 2], parentDir, 'fileList.txt', (572, 572), (572, 572), batch_size,isTrain=1)
+    imR = ImageLabelReader(0, [1, 2], parentDir, 'fileList.txt', (572, 572), (572, 572), batch_size, isTrain=True)
 
     testBatchSize = 11
     print('initialized reader')
@@ -209,7 +218,7 @@ if __name__ == '__main__':
         init = tf.global_variables_initializer()
         sess.run(init)
         threads = tf.train.start_queue_runners(coord=coord, sess=sess)
-        N1 = imR.readerAction(testBatchSize, sess)
+        N1 = imR.readerAction(sess)
         #N2 = imR.readerAction(testBatchSize, sess)
         #N3 = imR.readerAction(testBatchSize, sess)
         
@@ -225,4 +234,3 @@ if __name__ == '__main__':
         plt.subplot(5,3,i*3+3)
         plt.imshow(N1[i,:,:,2])
     plt.show()
-    

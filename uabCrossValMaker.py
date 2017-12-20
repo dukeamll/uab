@@ -22,10 +22,12 @@ import os
 import re
 
 def uabUtilGetFolds(parentDir, fileList, xvalType):
-    if('city' in xvalType):
+    if 'city' == xvalType:
         xvalObj = uabXvalByCity()
-    elif('tile' in xvalType):
+    elif 'tile' == xvalType:
         xvalObj = uabXvalByTile()
+    elif 'force_tile' == xvalType:
+        xvalObj = uabXvalByForceTile()
     else:
         xvalObj = uabXvalParent()
     
@@ -66,6 +68,12 @@ def getTileNumber(file_name):
     """
     s = concat_list(file_name)
     return int(re.findall('[0-9]+', s)[0])
+
+
+def make_file_list_by_key(idx, file_list, key):
+    if type(key) is not list:
+        key = [key]
+    return [file_list[a] for a in range(len(file_list)) if idx[a] in key]
     
 
 class uabXvalParent(object):
@@ -78,8 +86,7 @@ class uabXvalParent(object):
             chipFiles = [a.strip().split(' ') for a in chipFiles]
         else:
             chipFiles = fileList
-            
-        return self.computeFolds(chipFiles)
+        return self.computeFolds(chipFiles), chipFiles
     
     def computeFolds(self, chipFiles):
         #one index per row in the list of lists of chips or tiles by their channel
@@ -119,4 +126,16 @@ class uabXvalByTile(uabXvalParent):
                 tile_set[tile_number] = cnt
                 cnt += 1
                 idx.append(tile_set[tile_number])
+        return idx
+
+
+class uabXvalByForceTile(uabXvalParent):
+    """
+    Force the idx equal to tile number
+    """
+    def computeFolds(self, chipFiles):
+        idx = []
+        for row in chipFiles:
+            tile_number = getTileNumber(row)
+            idx.append(tile_number)
         return idx

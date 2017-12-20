@@ -7,7 +7,7 @@ Created on Fri Dec  8 13:08:49 2017
 """
 import util_functions        
 
-#parent class for tile operations.  Has a name and an action
+# parent class for tile operations.  Has a name and an action
 class uabOperTileOps(object):
     def __init__(self, defName):
         self.defaultName = defName

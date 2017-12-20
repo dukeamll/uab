@@ -13,6 +13,7 @@ import scipy.misc
 from sys import platform
 import os
 import numpy as np
+import imageio
 
 sl = os.path.sep
 
@@ -64,7 +65,8 @@ def uabUtilAllTypeLoad(fileName):
     #handles the loading of a file of all types in python
     try:
         if fileName[-3:] != 'npy':
-            outP = scipy.misc.imread(fileName)
+            #outP = scipy.misc.imread(fileName)
+            outP = imageio.imread(fileName)
         else:
             outP = np.load(fileName)
         
@@ -75,7 +77,8 @@ def uabUtilAllTypeLoad(fileName):
 def uabUtilAllTypeSave(fileName, variable_to_save):
     #handles the loading of a file of all types in python
     if fileName[-3:] != 'npy':
-        scipy.misc.imsave(fileName, variable_to_save)
+        #scipy.misc.imsave(fileName, variable_to_save)
+        imageio.imwrite(fileName, variable_to_save)
     else:
         np.save(fileName, variable_to_save) 
 
@@ -118,8 +121,10 @@ def read_data(data_list, random_rotation=False, random_flip=False):
     data_chunk = np.zeros((patch_num, w, h, c))
     labels_chunk = np.zeros((patch_num, w, h, 1))
     for i in range(patch_num):
-        data_chunk[i,:,:,:] = data_augmentation(scipy.misc.imread(data_list[i][0]), random_rotation=random_rotation, random_flip=random_flip)
-        labels_chunk[i,:,:,:] = data_augmentation(scipy.misc.imread(data_list[i][1]), random_rotation=random_rotation, random_flip=random_flip)
+        data_chunk[i,:,:,:] = data_augmentation(scipy.misc.imread(data_list[i][0]),
+                                                random_rotation=random_rotation, random_flip=random_flip)
+        labels_chunk[i,:,:,:] = data_augmentation(scipy.misc.imread(data_list[i][1]),
+                                                  random_rotation=random_rotation, random_flip=random_flip)
         
     return data_chunk, labels_chunk  
 
@@ -162,21 +167,15 @@ def get_pred_labels(pred):
         return outputs
 
 
-def decode_labels(label, num_images=10):
-    """
-    Decode label back to RGB data
-    :param label: image with elements corresponding to category number
-    :param num_images: num of images to decode
-    :return: image with elements corresponding to RGB data
-    """
+def decode_labels(label):
     n, h, w, c = label.shape
     outputs = np.zeros((n, h, w, 3), dtype=np.uint8)
-    label_colors = [(255,255,255),(0,0,255)]
-    for i in range(num_images):
+    label_colors = {0: (255, 255, 255), 1: (0, 0, 255), 2: (0, 255, 255)}
+    for i in range(n):
         pixels = np.zeros((h, w, 3), dtype=np.uint8)
         for j in range(h):
             for k in range(w):
-                pixels[j,k] = label_colors[np.int(label[i,j,k,0])]
+                pixels[j, k] = label_colors[np.int(label[i, j, k, 0])]
         outputs[i] = pixels
     return outputs
 
@@ -187,5 +186,36 @@ def iou_metric(truth, pred, truth_val=255):
     truth = truth.flatten()
     pred = pred.flatten()
     intersect = truth*pred
-    return sum(intersect == 1) / \
-           (sum(truth == 1)+sum(pred == 1)-sum(intersect == 1))
+    return sum(intersect == 1) / (sum(truth == 1)+sum(pred == 1)-sum(intersect == 1))
+
+
+def pad_prediction(image, prediction):
+    _, img_w, img_h, _ = image.shape
+    n, pred_img_w, pred_img_h, c = prediction.shape
+
+    if img_w > pred_img_w and img_h > pred_img_h:
+        pad_w = int((img_w - pred_img_w) / 2)
+        pad_h = int((img_h - pred_img_h) / 2)
+        prediction_padded = np.zeros((n, img_w, img_h, c))
+        pad_dim = ((pad_w, pad_w),
+                   (pad_h, pad_h))
+
+        for batch_id in range(n):
+            for channel_id in range(c):
+                prediction_padded[batch_id, :, :, channel_id] = \
+                    np.pad(prediction[batch_id, :, :, channel_id], pad_dim, 'constant')
+        prediction = prediction_padded
+        return prediction
+    else:
+        return prediction
+
+
+def image_summary(image, truth, prediction, img_mean=np.array((0, 0, 0), dtype=np.float32)):
+    truth_img = decode_labels(truth)
+
+    prediction = pad_prediction(image, prediction)
+
+    pred_labels = get_pred_labels(prediction)
+    pred_img = decode_labels(pred_labels)
+
+    return np.concatenate([image+img_mean, truth_img, pred_img], axis=2)

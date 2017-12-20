@@ -36,10 +36,11 @@ class Network(object):
             format(self.model_name, patch_size, self.bs, self.epochs, self.lr, self.ds, self.dr)
         self.ckdir = os.path.join(ckdir, dir_name)
 
-    def load(self, model_path, sess):
+    def load(self, model_path, sess, saver=None):
         # this can only be called after create_graph()
         # loads all weights in a graph
-        saver = tf.train.Saver(var_list=tf.global_variables())
+        if saver is None:
+            saver = tf.train.Saver(var_list=tf.global_variables())
         if os.path.exists(model_path) and tf.train.get_checkpoint_state(model_path):
             latest_check_point = tf.train.latest_checkpoint(model_path)
             saver.restore(sess, latest_check_point)
@@ -51,14 +52,14 @@ class Network(object):
         else:
             return self.name
 
-    def conv_conv_pool(self, input_, n_filters, training, name, conv_strid=(3, 3),
+    def conv_conv_pool(self, input_, n_filters, training, name, kernal_size=(3, 3),
                        pool=True, pool_size=(2, 2), pool_stride=(2, 2),
                        activation=tf.nn.relu, padding='same', bn=True):
         net = input_
 
         with tf.variable_scope('layer{}'.format(name)):
             for i, F in enumerate(n_filters):
-                net = tf.layers.conv2d(net, F, conv_strid, activation=None,
+                net = tf.layers.conv2d(net, F, kernal_size, activation=None,
                                        padding=padding, name='conv_{}'.format(i + 1))
                 if bn:
                     net = tf.layers.batch_normalization(net, training=training, name='bn_{}'.format(i+1))
@@ -70,18 +71,18 @@ class Network(object):
             pool = tf.layers.max_pooling2d(net, pool_size, strides=pool_stride, name='pool_{}'.format(name))
             return net, pool
 
-    def conv_conv_identity_pool_crop(self, input_, n_filters, training, name, conv_strid=(3, 3),
+    def conv_conv_identity_pool_crop(self, input_, n_filters, training, name, kernal_size=(3, 3),
                                      pool=True, pool_size=(2, 2), pool_stride=(2, 2),
                                      activation=tf.nn.relu, padding='same', bn=True):
         net = input_
         _, w, h, _ = input_.get_shape().as_list()
         with tf.variable_scope('layer{}'.format(name)):
-            input_conv = tf.layers.conv2d(net, n_filters[-1], conv_strid, activation=None,
+            input_conv = tf.layers.conv2d(net, n_filters[-1], kernal_size, activation=None,
                                           padding='same', name='conv_skip')
             input_conv = tf.layers.batch_normalization(input_conv, training=training, name='bn_skip')
 
             for i, F in enumerate(n_filters):
-                net = tf.layers.conv2d(net, F, conv_strid, activation=None,
+                net = tf.layers.conv2d(net, F, kernal_size, activation=None,
                                        padding=padding, name='conv_{}'.format(i + 1))
                 if bn:
                     net = tf.layers.batch_normalization(net, training=training, name='bn_{}'.format(i+1))
