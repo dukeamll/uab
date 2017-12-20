@@ -6,7 +6,7 @@ from bohaoCustom import uabMakeNetwork_UNet
 class ResFcnModel(uabMakeNetwork_UNet.UnetModel):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=0.2,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
-                 batch_size=5, start_filter_num=32):
+                 batch_size=5, start_filter_num=64):
         network.Network.__init__(self, inputs, trainable, dropout_rate,
                                  learn_rate, decay_step, decay_rate, epochs, batch_size)
         self.name = 'ResFcn'
