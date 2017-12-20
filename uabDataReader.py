@@ -191,6 +191,7 @@ class ImageLabelReader(object):
             rldData = tf.image.resize_images(ldData, self.chip_size)
             queueOutput.append(rldData)
         queueOutput = tf.squeeze(tf.stack(queueOutput, axis=2), axis=-1)
+        queueOutput = tf.image.resize_images(queueOutput, self.chip_size)
 
         if self.block_mean is not None:
             queueOutput -= self.block_mean
