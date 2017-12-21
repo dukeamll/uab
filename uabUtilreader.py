@@ -44,14 +44,48 @@ def image_rotating(img, nDim):
     img = tf.slice(temp_rotated, [0, 0, 0], [-1, -1, nDim])
     return img
 
-def doDataAug(data, dataMeta, augType):
+
+def image_rotating_np(img):
+    """
+    randomly rotate images by 0/90/180/270 degrees
+    :param img:
+    :param label:
+    :return:rotated images
+    """
+    rot_time = np.random.randint(low=0, high=4)
+    img = np.rot90(img, rot_time, (0, 1))
+    return img
+
+
+def image_flipping_np(img):
+    """
+    randomly flips images left-right and up-down
+    :param img:
+    :return:flipped images
+    """
+    v_flip = np.random.randint(0, 1)
+    h_flip = np.random.randint(0, 1)
+    if v_flip == 1:
+        img = img[::-1, :, :]
+    if h_flip == 1:
+        img = img[:, ::-1, :]
+    return img
+
+
+def doDataAug(data, dataMeta, augType, is_np=False):
     #function to call that actually performs the augmentations
     #dataMeta is a list of info (e.g. label, number of channels)
-    
-    if 'flip' in augType:
-        data = image_flipping(data, dataMeta)
-    if 'rotate' in augType:
-        data = image_rotating(data, dataMeta)
+
+    if is_np:
+        if 'flip' in augType:
+            data = image_flipping_np(data)
+        if 'rotate' in augType:
+            data = image_rotating_np(data)
+    else:
+        if 'flip' in augType:
+            data = image_flipping(data, dataMeta)
+        if 'rotate' in augType:
+            data = image_rotating(data, dataMeta)
     
     return data
 

@@ -95,7 +95,7 @@ class ImageLabelReader(object):
         else:
             return next(self.readManager)
     
-    def readFromDiskIteratorTrain(self, image_dir, chipFiles, batch_size, patch_size, random, padding=(0,0),dataAug=''):
+    def readFromDiskIteratorTrain(self, image_dir, chipFiles, batch_size, patch_size, random, padding=(0,0), dataAug=''):
         # this is a iterator for training
         
         if(random):
