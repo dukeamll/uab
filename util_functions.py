@@ -186,7 +186,8 @@ def iou_metric(truth, pred, truth_val=1):
     truth = truth.flatten()
     pred = pred.flatten()
     intersect = truth*pred
-    return sum(intersect == 1) / (sum(truth == 1)+sum(pred == 1)-sum(intersect == 1))
+    # return sum(intersect == 1) / (sum(truth == 1)+sum(pred == 1)-sum(intersect == 1))
+    return sum(intersect == 1) / sum(truth+pred >= 1)
 
 
 def pad_prediction(image, prediction):
