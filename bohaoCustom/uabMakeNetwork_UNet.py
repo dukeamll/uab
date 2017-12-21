@@ -1,8 +1,11 @@
 import os
+import imageio
 import numpy as np
 import tensorflow as tf
 import util_functions
 import uabUtilreader
+import uabDataReader
+import uabRepoPaths
 from bohaoCustom import uabMakeNetwork as network
 
 
@@ -175,6 +178,10 @@ class UnetModel(network.Network):
         result = np.vstack(result)
         return result
 
+    def get_overlap(self):
+        # TODO calculate the padding pixels
+        return 0
+
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=0,
             tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1):
@@ -209,9 +216,79 @@ class UnetModel(network.Network):
                 init = tf.global_variables_initializer()
                 sess.run(init)
                 self.load(pretrained_model_dir, sess)
+                self.model_name = pretrained_model_dir.split('/')[-1]
                 result = self.test('X', sess, test_reader)
             image_pred = uabUtilreader.un_patchify(result, tile_size, patch_size)
             return util_functions.get_pred_labels(image_pred) * truth_val
+
+    def evaluate(self, rgb_list, gt_list, rgb_dir, gt_dir, input_size, tile_size, batch_size, img_mean,
+                 model_dir, gpu, save_result=True, show_figure=False, verb=True):
+        if show_figure:
+            import matplotlib.pyplot as plt
+        iou_record = []
+        for file_name, file_name_truth in zip(rgb_list, gt_list):
+            tile_name = file_name_truth.split('_')[0]
+            if verb:
+                print('Evaluating {} ...'.format(tile_name))
+
+            # prepare the reader
+            reader = uabDataReader.ImageLabelReader(gtInds=[0],
+                                                    dataInds=[0],
+                                                    nChannels=3,
+                                                    parentDir=rgb_dir,
+                                                    chipFiles=[file_name],
+                                                    chip_size=input_size,
+                                                    tile_size=tile_size,
+                                                    batchSize=batch_size,
+                                                    block_mean=img_mean,
+                                                    overlap=self.get_overlap(),
+                                                    padding=np.array((self.get_overlap()/2, self.get_overlap()/2)),
+                                                    isTrain=False)
+            rManager = reader.readManager
+
+            # run the model
+            pred = self.run(pretrained_model_dir=model_dir,
+                             test_reader=rManager,
+                             tile_size=tile_size,
+                             patch_size=input_size,
+                             gpu=gpu)
+
+            truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
+            iou = util_functions.iou_metric(truth_label_img, pred)
+            iou_record.append(iou)
+            if verb:
+                print('{} mean IoU={:.3f}'.format(tile_name, iou))
+
+            # save results
+            if save_result:
+                score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name)
+                pred_save_dir = os.path.join(score_save_dir, 'pred')
+                if not os.path.exists(score_save_dir):
+                    os.makedirs(score_save_dir)
+                if not os.path.exists(pred_save_dir):
+                    os.makedirs(pred_save_dir)
+                imageio.imwrite(os.path.join(pred_save_dir, tile_name+'.png'), pred)
+                with open(os.path.join(score_save_dir, 'result.txt'), 'a+') as file:
+                    file.write('{} {}\n'.format(tile_name, iou))
+
+            if show_figure:
+                plt.figure(figsize=(12, 4))
+                ax1 = plt.subplot(121)
+                ax1.imshow(truth_label_img)
+                plt.title('Truth')
+                ax2 = plt.subplot(122, sharex=ax1, sharey=ax1)
+                ax2.imshow(pred)
+                plt.title('pred')
+                plt.suptitle('{} Results on {} IoU={:3f}'.format(self.model_name, file_name_truth.split('_')[0], iou))
+                plt.show()
+
+        mean_iou = np.mean(iou_record)
+        print('Overall mean IoU={:.3f}'.format(mean_iou))
+        if save_result:
+            score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name)
+            with open(os.path.join(score_save_dir, 'result.txt'), 'a+') as file:
+                file.write('{}'.format(mean_iou))
+
 
 
 class UnetModelCrop(UnetModel):
@@ -341,6 +418,7 @@ class UnetModelCrop(UnetModel):
                 init = tf.global_variables_initializer()
                 sess.run(init)
                 self.load(pretrained_model_dir, sess)
+                self.model_name = pretrained_model_dir.split('/')[-1]
                 result = self.test('X', sess, test_reader)
             image_pred = uabUtilreader.un_patchify_shrink(result,
                                                           [tile_size[0] + pad, tile_size[1] + pad],

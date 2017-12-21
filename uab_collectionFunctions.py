@@ -268,6 +268,31 @@ class uabCollection(object):
             with open(metaInfoName, 'wb') as f:
                 pickle.dump(meta, f)
         return meta
+
+    def getAllTileByDirAndExt(self, extId):
+        """
+        Return a list of tiles as well as the parent directory
+        :param extId: id of the extension
+        :return: a list of tiles, parent directory of these tiles
+        """
+        if type(extId) is list:
+            dirn = []
+            img_list = []
+            ext_list = []
+            for eid in extId:
+                ext, dn = self.getExtensionInfoById(eid)
+                img_list.append(self.getImLists(dn))
+                dirn.append(os.path.join(self.imDirectory, uabCollection.dataDirnames['data'], dn))
+                ext_list.append(ext)
+            img_list = [[l[i]+'_'+eid for (l, eid) in zip(img_list, ext_list)] for i in range(len(img_list[0]))]
+            if list(set(dirn)) == 1:
+                return img_list, list(set(dirn))[0]
+            else:
+                return img_list, dirn
+        else:
+            ext, dirn = self.getExtensionInfoById(extId)
+            img_list = self.getImLists(dirn)
+            return [img+'_'+ext for img in img_list], os.path.join(self.imDirectory, uabCollection.dataDirnames['data'], dirn)
     
 """    
     def getAllTileByDirAndExt(self, dirn, ext):

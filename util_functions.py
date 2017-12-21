@@ -180,7 +180,7 @@ def decode_labels(label):
     return outputs
 
 
-def iou_metric(truth, pred, truth_val=255):
+def iou_metric(truth, pred, truth_val=1):
     truth = truth / truth_val
     pred = pred / truth_val
     truth = truth.flatten()

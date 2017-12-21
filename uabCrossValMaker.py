@@ -70,10 +70,32 @@ def getTileNumber(file_name):
     return int(re.findall('[0-9]+', s)[0])
 
 
-def make_file_list_by_key(idx, file_list, key):
+def make_file_list_by_key(idx, file_list, key, filter_list=None):
     if type(key) is not list:
         key = [key]
-    return [file_list[a] for a in range(len(file_list)) if idx[a] in key]
+    if filter_list is None:
+        return [file_list[a] for a in range(len(file_list)) if idx[a] in key]
+    else:
+        if type(filter_list) is not list:
+            filter_list = [filter_list]
+        file_list_return = []
+        for a in range(len(file_list)):
+            if idx[a] in key:
+                check_flag = 0
+                if type(file_list[a]) is list:
+                    for item in file_list[a]:
+                        for filter_item in filter_list:
+                            if filter_item in item:
+                                check_flag = 1
+                                break
+                else:
+                    for filter_item in filter_list:
+                        if filter_item in file_list[a]:
+                            check_flag = 1
+                            break
+                if check_flag == 0:
+                    file_list_return.append(file_list[a])
+        return file_list_return
     
 
 class uabXvalParent(object):

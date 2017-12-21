@@ -138,8 +138,11 @@ class ImageLabelReader(object):
         for row in chipFiles:
             blockList = []
             nDims = 0
-            for file in row:
-                img = util_functions.uabUtilAllTypeLoad(os.path.join(image_dir,file))
+            for cnt, file in enumerate(row):
+                if type(image_dir) is list:
+                    img = util_functions.uabUtilAllTypeLoad(os.path.join(image_dir[cnt], file))
+                else:
+                    img = util_functions.uabUtilAllTypeLoad(os.path.join(image_dir, file))
                 if len(img.shape) == 2:
                     img = np.expand_dims(img, axis=2)
                 nDims += img.shape[2]

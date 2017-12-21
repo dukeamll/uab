@@ -27,3 +27,4 @@ parentDir = r'/media/ei-edl01/data/uab_datasets'
 dataPath = parentDir
 resPath = r'/hdd/uab_datasets/Results'
 modelPath = r'/hdd/Models'
+evalPath = r'/hdd/Results'
