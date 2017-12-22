@@ -8,8 +8,7 @@ some globally utile functions
 """
 
 
-import scipy
-import scipy.misc
+import time
 from sys import platform
 import os
 import numpy as np
@@ -115,15 +114,15 @@ def read_data(data_list, random_rotation=False, random_flip=False):
     patch_num = len(data_list)
 
     # get width and height
-    test_data = scipy.misc.imread(data_list[0][0])
+    test_data = imageio.imread(data_list[0][0])
     w, h, c = test_data.shape
 
     data_chunk = np.zeros((patch_num, w, h, c))
     labels_chunk = np.zeros((patch_num, w, h, 1))
     for i in range(patch_num):
-        data_chunk[i,:,:,:] = data_augmentation(scipy.misc.imread(data_list[i][0]),
+        data_chunk[i,:,:,:] = data_augmentation(imageio.imread(data_list[i][0]),
                                                 random_rotation=random_rotation, random_flip=random_flip)
-        labels_chunk[i,:,:,:] = data_augmentation(scipy.misc.imread(data_list[i][1]),
+        labels_chunk[i,:,:,:] = data_augmentation(imageio.imread(data_list[i][1]),
                                                   random_rotation=random_rotation, random_flip=random_flip)
         
     return data_chunk, labels_chunk  
@@ -220,3 +219,12 @@ def image_summary(image, truth, prediction, img_mean=np.array((0, 0, 0), dtype=n
     pred_img = decode_labels(pred_labels)
 
     return np.concatenate([image+img_mean, truth_img, pred_img], axis=2)
+
+
+class runtime_decorator(object):
+    def __init__(self):
+        self.start_time = time.time()
+
+    def __call__(self, *args, **kwargs):
+        duration = time.time() - self.start_time
+        print('duration {:.2f} hours'.format(duration / 60 / 60))

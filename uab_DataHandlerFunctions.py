@@ -208,24 +208,6 @@ class uabPatchExtrRand(uabBlock):
             patchGridY.append(np.random.randint(maxIm1))
         return list(zip(patchGridY, patchGridX))
 
-        '''if (self.numPixOverlap == 0):
-            # this is to extract with as little overlap as possible
-            DS0 = np.ceil(tileSz[0] / self.chipExtrSize[0])
-            DS1 = np.ceil(tileSz[1] / self.chipExtrSize[1])
-            patchGridY = np.floor(np.linspace(0, maxIm0, DS0))
-            patchGridX = np.floor(np.linspace(0, maxIm1, DS1))
-        else:
-            # elif(self.numPixOverlap > 0):
-            # overlap by this number of pixels
-            # add the last possible patch to ensure that you are covering all the pixels in the image
-            patchGridY = list(range(0, maxIm0, self.chipExtrSize[0] - self.numPixOverlap))
-            patchGridY = patchGridY + [maxIm0]
-            patchGridX = list(range(0, maxIm1, self.chipExtrSize[1] - self.numPixOverlap))
-            patchGridX = patchGridX + [maxIm1]'''
-
-        Y, X = np.meshgrid(patchGridY, patchGridX)
-        return list(zip(Y.flatten(), X.flatten()))
-
     def runAction(self, colObj):
         # function to extract the chips from the tiles
 

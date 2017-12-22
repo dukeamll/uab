@@ -63,7 +63,7 @@ class UnetModel(network.Network):
         # this function only loads specified layers
         layers_list = []
         if isinstance(layers2load, str):
-            layers2load = layers2load.split(',')
+            layers2load = [int(a) for a in layers2load.split(',')]
         for layer_id in layers2load:
             assert 1 <= layer_id <= 9
             if layer_id <= 5:
@@ -222,7 +222,7 @@ class UnetModel(network.Network):
             return util_functions.get_pred_labels(image_pred) * truth_val
 
     def evaluate(self, rgb_list, gt_list, rgb_dir, gt_dir, input_size, tile_size, batch_size, img_mean,
-                 model_dir, gpu, save_result=True, show_figure=False, verb=True):
+                 model_dir, gpu, save_result=True, show_figure=False, verb=True, ds_name='default'):
         if show_figure:
             import matplotlib.pyplot as plt
         iou_record = []
@@ -261,7 +261,7 @@ class UnetModel(network.Network):
 
             # save results
             if save_result:
-                score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name)
+                score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
                 pred_save_dir = os.path.join(score_save_dir, 'pred')
                 if not os.path.exists(score_save_dir):
                     os.makedirs(score_save_dir)
@@ -285,7 +285,7 @@ class UnetModel(network.Network):
         mean_iou = np.mean(iou_record)
         print('Overall mean IoU={:.3f}'.format(mean_iou))
         if save_result:
-            score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name)
+            score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
             with open(os.path.join(score_save_dir, 'result.txt'), 'a+') as file:
                 file.write('{}'.format(mean_iou))
 
