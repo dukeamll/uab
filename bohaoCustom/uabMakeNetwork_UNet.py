@@ -226,6 +226,7 @@ class UnetModel(network.Network):
         if show_figure:
             import matplotlib.pyplot as plt
         iou_record = []
+        iou_return = {}
         for file_name, file_name_truth in zip(rgb_list, gt_list):
             tile_name = file_name_truth.split('_')[0]
             if verb:
@@ -256,6 +257,7 @@ class UnetModel(network.Network):
             truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
             iou = util_functions.iou_metric(truth_label_img, pred)
             iou_record.append(iou)
+            iou_return[tile_name] = iou
             if verb:
                 print('{} mean IoU={:.3f}'.format(tile_name, iou))
 
@@ -288,6 +290,8 @@ class UnetModel(network.Network):
             score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
             with open(os.path.join(score_save_dir, 'result.txt'), 'a+') as file:
                 file.write('{}'.format(mean_iou))
+
+        return iou_return
 
 
 
