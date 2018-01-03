@@ -337,7 +337,7 @@ class UnetModelCrop(UnetModel):
         with tf.variable_scope('loss'):
             pred_flat = tf.reshape(self.pred, [-1, self.class_num])
             _, w, h, _ = self.inputs[y_name].get_shape().as_list()
-            y = tf.image.resize_image_with_crop_or_pad(self.inputs[y_name], w-184, h-184)
+            y = tf.image.resize_image_with_crop_or_pad(self.inputs[y_name], w-self.get_overlap(), h-self.get_overlap())
             y_flat = tf.reshape(tf.squeeze(y, axis=[3]), [-1, ])
             indices = tf.squeeze(tf.where(tf.less_equal(y_flat, self.class_num - 1)), 1)
             gt = tf.gather(y_flat, indices)
@@ -431,6 +431,52 @@ class UnetModelCrop(UnetModel):
                                                           [patch_size[0] - pad, patch_size[1] - pad],
                                                           overlap=pad)
             return util_functions.get_pred_labels(image_pred) * truth_val
+
+
+class UnetModelMoreCrop(UnetModelCrop):
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=0.2,
+                 learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
+                 batch_size=5, start_filter_num=32):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.name = 'UnetMoreCrop'
+        self.model_name = self.get_unique_name(model_name)
+        self.sfn = start_filter_num
+        self.learning_rate = None
+        self.valid_cross_entropy = tf.placeholder(tf.float32, [])
+        self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
+                                                            input_size[1] * 3, 3], name='validation_images')
+        self.update_ops = None
+
+    def create_graph(self, x_name, class_num, start_filter_num=32):
+        self.class_num = class_num
+        sfn = self.sfn
+
+        # downsample
+        conv1, pool1 = self.conv_conv_pool(self.inputs[x_name], [sfn, sfn], self.trainable, name='conv1', padding='valid')
+        conv2, pool2 = self.conv_conv_pool(pool1, [sfn*2, sfn*2], self.trainable, name='conv2', padding='valid')
+        conv3, pool3 = self.conv_conv_pool(pool2, [sfn*4, sfn*4], self.trainable, name='conv3', padding='valid')
+        conv4, pool4 = self.conv_conv_pool(pool3, [sfn*8, sfn*8], self.trainable, name='conv4', padding='valid')
+        conv5 = self.conv_conv_pool(pool4, [sfn*16, sfn*16], self.trainable, name='conv5', pool=False, padding='valid')
+
+        # upsample
+        up6 = self.crop_upsample_concat(conv5, conv4, 8, name='6')
+        conv6 = self.conv_conv_pool(up6, [sfn*8, sfn*8], self.trainable, name='up6', pool=False, padding='valid')
+        up7 = self.crop_upsample_concat(conv6, conv3, 32, name='7')
+        conv7 = self.conv_conv_pool(up7, [sfn*4, sfn*4], self.trainable, name='up7', pool=False, padding='valid')
+        up8 = self.crop_upsample_concat(conv7, conv2, 80, name='8')
+        conv8 = self.conv_conv_pool(up8, [sfn*2, sfn*2], self.trainable, name='up8', pool=False, padding='valid')
+        up9 = self.crop_upsample_concat(conv8, conv1, 176, name='9')
+        conv9 = self.conv_conv_pool(up9, [sfn, sfn], self.trainable, name='up9', pool=False, padding='valid')
+
+        _, w, h, _ = conv9.get_shape().as_list()
+        crop9 = tf.image.resize_image_with_crop_or_pad(conv9, w-20, h-20)
+
+        self.pred = tf.layers.conv2d(crop9, class_num, (1, 1), name='final', activation=None, padding='same')
+
+    def get_overlap(self):
+        # TODO calculate the padding pixels
+        return 224
 
 
 class UnetModel_Appendix(UnetModelCrop):
