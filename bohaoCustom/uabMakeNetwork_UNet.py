@@ -183,10 +183,11 @@ class UnetModel(network.Network):
         return 0
 
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
-            isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=0,
+            isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
             tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1):
-        os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+        if gpu is not None:
+            os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
         if isTrain:
             coord = tf.train.Coordinator()
             with tf.Session(config=self.config) as sess:
@@ -222,7 +223,7 @@ class UnetModel(network.Network):
             return util_functions.get_pred_labels(image_pred) * truth_val
 
     def evaluate(self, rgb_list, gt_list, rgb_dir, gt_dir, input_size, tile_size, batch_size, img_mean,
-                 model_dir, gpu, save_result=True, show_figure=False, verb=True, ds_name='default'):
+                 model_dir, gpu=None, save_result=True, show_figure=False, verb=True, ds_name='default'):
         if show_figure:
             import matplotlib.pyplot as plt
         iou_record = []
@@ -388,10 +389,11 @@ class UnetModelCrop(UnetModel):
         return 184
 
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
-            isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=0,
+            isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
             tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1):
-        os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+        if gpu is not None:
+            os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
         if isTrain:
             coord = tf.train.Coordinator()
             with tf.Session(config=self.config) as sess:
