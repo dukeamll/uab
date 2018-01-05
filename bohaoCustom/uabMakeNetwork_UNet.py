@@ -1,4 +1,5 @@
 import os
+import time
 import imageio
 import numpy as np
 import tensorflow as tf
@@ -231,7 +232,8 @@ class UnetModel(network.Network):
         for file_name, file_name_truth in zip(rgb_list, gt_list):
             tile_name = file_name_truth.split('_')[0]
             if verb:
-                print('Evaluating {} ...'.format(tile_name))
+                print('Evaluating {} ... '.format(tile_name))
+            start_time = time.time()
 
             # prepare the reader
             reader = uabDataReader.ImageLabelReader(gtInds=[0],
@@ -250,17 +252,19 @@ class UnetModel(network.Network):
 
             # run the model
             pred = self.run(pretrained_model_dir=model_dir,
-                             test_reader=rManager,
-                             tile_size=tile_size,
-                             patch_size=input_size,
-                             gpu=gpu)
+                            test_reader=rManager,
+                            tile_size=tile_size,
+                            patch_size=input_size,
+                            gpu=gpu)
 
             truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
             iou = util_functions.iou_metric(truth_label_img, pred)
             iou_record.append(iou)
             iou_return[tile_name] = iou
+
+            duration = time.time() - start_time
             if verb:
-                print('{} mean IoU={:.3f}'.format(tile_name, iou))
+                print('{} mean IoU={:.3f}, duration: {:.3f}'.format(tile_name, iou, duration))
 
             # save results
             if save_result:
@@ -472,7 +476,7 @@ class UnetModelMoreCrop(UnetModelCrop):
         conv9 = self.conv_conv_pool(up9, [sfn, sfn], self.trainable, name='up9', pool=False, padding='valid')
 
         _, w, h, _ = conv9.get_shape().as_list()
-        crop9 = tf.image.resize_image_with_crop_or_pad(conv9, w-20, h-20)
+        crop9 = tf.image.resize_image_with_crop_or_pad(conv9, w-40, h-40)
 
         self.pred = tf.layers.conv2d(crop9, class_num, (1, 1), name='final', activation=None, padding='same')
 
