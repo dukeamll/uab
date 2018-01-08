@@ -21,6 +21,7 @@ class Network(object):
         self.loss = []
         self.optimizer = []
         self.pred = []
+        self.output = []
         self.summary = []
         self.ckdir = []
         self.model_name = []

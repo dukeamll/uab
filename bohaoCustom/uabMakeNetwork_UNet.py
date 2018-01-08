@@ -58,6 +58,7 @@ class UnetModel(network.Network):
         conv9 = self.conv_conv_pool(up9, [sfn, sfn], self.trainable, name='up9', pool=False)
 
         self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
+        self.output = tf.nn.softmax(self.pred)
 
     def load_weights(self, ckpt_dir, layers2load):
         # this is different from network.load()
@@ -173,8 +174,10 @@ class UnetModel(network.Network):
     def test(self, x_name, sess, test_iterator):
         result = []
         for X_batch in test_iterator:
-            pred = sess.run(tf.nn.softmax(self.pred), feed_dict={self.inputs[x_name]:X_batch,
-                                                                 self.trainable: False})
+            #pred = sess.run(tf.nn.softmax(self.pred), feed_dict={self.inputs[x_name]:X_batch,
+            #                                                     self.trainable: False})
+            pred = sess.run(self.output, feed_dict={self.inputs[x_name]: X_batch,
+                                                    self.trainable: False})
             result.append(pred)
         result = np.vstack(result)
         return result
@@ -337,6 +340,7 @@ class UnetModelCrop(UnetModel):
         conv9 = self.conv_conv_pool(up9, [sfn, sfn], self.trainable, name='up9', pool=False, padding='valid')
 
         self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
+        self.output = tf.nn.softmax(self.pred)
 
     def make_loss(self, y_name, loss_type='xent'):
         with tf.variable_scope('loss'):
@@ -479,6 +483,7 @@ class UnetModelMoreCrop(UnetModelCrop):
         crop9 = tf.image.resize_image_with_crop_or_pad(conv9, w-40, h-40)
 
         self.pred = tf.layers.conv2d(crop9, class_num, (1, 1), name='final', activation=None, padding='same')
+        self.output = tf.nn.softmax(self.pred)
 
     def get_overlap(self):
         # TODO calculate the padding pixels
@@ -523,6 +528,7 @@ class UnetModel_Appendix(UnetModelCrop):
 
         conv10 = tf.layers.conv2d(conv9, sfn, (1, 1), name='second_final', padding='same')
         self.pred = tf.layers.conv2d(conv10, class_num, (1, 1), name='final', activation=None, padding='same')
+        self.output = tf.nn.softmax(self.pred)
 
 
 class ResUnetModel_Crop(UnetModelCrop):
@@ -557,3 +563,4 @@ class ResUnetModel_Crop(UnetModelCrop):
                                                   padding='valid')
 
         self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
+        self.output = tf.nn.softmax(self.pred)
