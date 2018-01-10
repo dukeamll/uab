@@ -80,6 +80,30 @@ class UnetModel(network.Network):
             load_dict[feed_layer] = feed_layer
         tf.contrib.framework.init_from_checkpoint(ckpt_dir, load_dict)
 
+
+    def restore_model(self,sess):
+        # automatically restore last saved model if checkpoint exists
+        if tf.train.latest_checkpoint(self.ckdir): 
+
+            self.load(self.ckdir,sess)
+
+            with open(os.path.join(self.ckdir,'checkpoint'),'r') as f:
+                model_checkpoint_path = f.readline().split('/')[-1]
+            buf = [int(i) for i in re.findall(r"\d+", model_checkpoint_path)]
+            if len(buf) == 1:
+                start_step = buf[0]+1
+                self.start_epoch = int(np.floor(start_step/(8000/self.bs)))
+            elif len(buf) == 2:
+                self.start_epoch = buf[0]+1
+                start_step = buf[1]+1
+        else:
+            self.start_epoch,start_step = [0,0]
+            
+        sess.run(self.global_step.assign(start_step))
+        self.global_step_value = self.global_step.eval()
+        print('restoring model from epoch %d step %d'%(self.start_epoch,self.global_step_value))   
+
+
     def make_learning_rate(self, n_train):
         self.learning_rate = tf.train.exponential_decay(self.lr, self.global_step,
                                                         tf.cast(n_train/self.bs * self.ds, tf.int32),
@@ -488,6 +512,31 @@ class UnetModelMoreCrop(UnetModelCrop):
     def get_overlap(self):
         # TODO calculate the padding pixels
         return 224
+
+
+
+#%% UnetModelCropWeighted has loss function that assigns weights to imbalanced classes
+class UnetModelCropWeighted(UnetModelCrop):
+    
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=0.2,learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,batch_size=5, start_filter_num=32, class_weights = [1,1]):
+        super(UnetModelCropWeighted, self).__init__( inputs, trainable, input_size, model_name, dropout_rate,learn_rate, decay_step, decay_rate, epochs,batch_size, start_filter_num)
+        self.cweights = tf.constant([w/class_weights[0] for w in class_weights], dtype = tf.float32)
+        self.name = 'UnetCropWeighted'
+        self.model_name = self.get_unique_name(model_name)
+
+    def make_loss(self, y_name, loss_type='xent'):
+        # TODO loss type IoU
+        with tf.variable_scope('loss'):
+            pred_flat = tf.reshape(self.pred, [-1, self.class_num])
+            _, w, h, _ = self.inputs[y_name].get_shape().as_list()
+            y = tf.image.resize_image_with_crop_or_pad(self.inputs[y_name], w-self.get_overlap(), h-self.get_overlap())
+            y_flat = tf.reshape(tf.squeeze(y, axis=[3]), [-1, ])
+            indices = tf.squeeze(tf.where(tf.less_equal(y_flat, self.class_num - 1)), 1)
+            gt = tf.gather(y_flat, indices)
+            prediction = tf.gather(pred_flat, indices)
+            weights = tf.gather(self.cweights,gt)
+            self.loss = tf.reduce_mean(tf.losses.sparse_softmax_cross_entropy(logits=prediction, labels=gt, weights=weights))
+
 
 
 class UnetModel_Appendix(UnetModelCrop):
