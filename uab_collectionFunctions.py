@@ -105,13 +105,13 @@ class uabCollection(object):
             return tilenames
     
     def getMetadataTiles(self, readcontents = 0):
-        #returns path for the metadata of all the tiles.  set readcontents = 1 if you want to load the information otherwise returns path
+        # returns path for the metadata of all the tiles.
+        # set readcontents = 1 if you want to load the information otherwise returns path
         metDatPath = os.path.join(self.imDirectory, uabCollection.dataDirnames['meta'],uabCollection.metaFilename)
         if(readcontents == 1):
             with open(metDatPath) as f:
                 datLines = f.readlines()
-                linesByTabs = [line.split('\t') for line in datLines]
-            
+                linesByTabs = [line.split('\t') for line in datLines if len(line) > 0]
             return linesByTabs
         else:
             return metDatPath

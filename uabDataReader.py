@@ -131,7 +131,7 @@ class ImageLabelReader(object):
                 image_batch[cnt % batch_size, :, :, :] = augDat
                
                 if((cnt+1) % batch_size == 0):
-                    yield image_batch[:, :, : 1:], image_batch[:, :, :, :1]
+                    yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1]
     
     def readFromDiskIteratorTest(self, image_dir, chipFiles, batch_size, tile_dim, patch_size, overlap=0, padding=(0,0)):
         # this is a iterator for test
