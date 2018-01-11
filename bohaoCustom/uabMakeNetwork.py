@@ -114,8 +114,8 @@ class Network(object):
 
         return tf.image.resize_nearest_neighbor(tensor, (target_H, target_W), name='upsample_{}'.format(name))
 
-    def upsample_concat(self, input_a, input_b, name):
-        upsample = self.upsampling_2D(input_a, size=(2, 2), name=name)
+    def upsample_concat(self, input_a, input_b, name, size=(2, 2)):
+        upsample = self.upsampling_2D(input_a, size=size, name=name)
         return tf.concat([upsample, input_b], axis=-1, name='concat_{}'.format(name))
 
     def crop_upsample_concat(self, input_a, input_b, margin, name):

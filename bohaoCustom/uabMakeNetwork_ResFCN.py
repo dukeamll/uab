@@ -132,6 +132,23 @@ class ResFcnModel(uabMakeNetwork_UNet.UnetModel):
 
 
 class ResFcnUnetModel(ResFcnModel):
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=0.2,
+                 learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
+                 batch_size=5, start_filter_num=64):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.name = 'ResFcnUnet'
+        self.model_name = self.get_unique_name(model_name)
+        self.sfn = start_filter_num
+        self.learning_rate = None
+        self.valid_cross_entropy = tf.placeholder(tf.float32, [])
+        self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
+                                                            input_size[1] * 3, 3], name='validation_images')
+        self.update_ops = None
+        self.config = None
+        self.n_train = 0
+        self.n_valid = 0
+
     def create_graph(self, x_name, class_num):
         self.class_num = class_num
         sfn = self.sfn
@@ -140,9 +157,9 @@ class ResFcnUnetModel(ResFcnModel):
         # pad & down sample
         with tf.variable_scope('layer_initial'):
             net = tf.pad(self.inputs[x_name], tf.constant([[0,0], [3,3], [3,3], [0,0]]))
-            net = tf.layers.conv2d(net, sfn, (7, 7), strides=(2, 2), activation=None, padding='valid',
-                                   name='conv_initial')
-            net = tf.layers.batch_normalization(net, training=self.trainable, name='bn_initial')
+            net_temp = tf.layers.conv2d(net, sfn, (7, 7), strides=(2, 2), activation=None, padding='valid',
+                                        name='conv_initial')
+            net = tf.layers.batch_normalization(net_temp, training=self.trainable, name='bn_initial')
             net = tf.nn.relu(net, name='relu_initial')
             net = tf.layers.max_pooling2d(net, (3, 3), strides=(2, 2), name='pool_initial')
 
@@ -172,17 +189,14 @@ class ResFcnUnetModel(ResFcnModel):
             down16 = self.identity_block(down15, [sfn*8, sfn*8, sfn*32], self.trainable, name='identity4_2')
 
         # upsample & fuse
-        with tf.variable_scope('up_1'):
-            up1 = tf.layers.conv2d(down7, self.class_num, (1, 1), activation=None, name='conv_1')
-            up1 = tf.image.resize_bilinear(up1, tf.constant([H, W]), name='upsample_1')
+        up17 = self.upsample_concat(down16, down13, name='1')
+        conv17 = self.conv_conv_pool(up17, [sfn*8, sfn*8], self.trainable, name='up6', pool=False)
+        up18 = self.upsample_concat(conv17, down7, name='2')
+        conv18 = self.conv_conv_pool(up18, [sfn*4, sfn*4], self.trainable, name='up7', pool=False)
+        up19 = self.upsample_concat(conv18, net_temp, name='3', size=(4, 4))
+        conv19 = self.conv_conv_pool(up19, [sfn*2, sfn*2], self.trainable, name='up8', pool=False)
+        up20 = self.upsample_concat(conv19, self.inputs[x_name], name='4')
+        conv20 = self.conv_conv_pool(up20, [sfn, sfn], self.trainable, name='up10', pool=False)
 
-        with tf.variable_scope('up_2'):
-            up2 = tf.layers.conv2d(down13, self.class_num, (1, 1), activation=None, name='conv_1')
-            up2 = tf.image.resize_bilinear(up2, tf.constant([H, W]), name='upsample_1')
-
-        with tf.variable_scope('up_3'):
-            up3 = tf.layers.conv2d(down16, self.class_num, (1, 1), activation=None, name='conv_1')
-            up3 = tf.image.resize_bilinear(up3, tf.constant([H, W]), name='upsample_1')
-
-        pred = tf.add(up1, up2)
-        self.pred = tf.add(pred, up3)
+        self.pred = tf.layers.conv2d(conv20, class_num, (1, 1), name='final', activation=None, padding='same')
+        self.output = tf.nn.softmax(self.pred)
