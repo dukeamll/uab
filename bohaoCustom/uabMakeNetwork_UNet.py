@@ -80,7 +80,6 @@ class UnetModel(network.Network):
             load_dict[feed_layer] = feed_layer
         tf.contrib.framework.init_from_checkpoint(ckpt_dir, load_dict)
 
-
     def restore_model(self,sess):
         # automatically restore last saved model if checkpoint exists
         if tf.train.latest_checkpoint(self.ckdir): 
@@ -101,8 +100,7 @@ class UnetModel(network.Network):
             
         sess.run(self.global_step.assign(start_step))
         self.global_step_value = self.global_step.eval()
-        print('restoring model from epoch %d step %d'%(self.start_epoch,self.global_step_value))   
-
+        print('restoring model from epoch %d step %d'%(self.start_epoch,self.global_step_value))
 
     def make_learning_rate(self, n_train):
         self.learning_rate = tf.train.exponential_decay(self.lr, self.global_step,

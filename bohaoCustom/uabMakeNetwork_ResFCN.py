@@ -129,3 +129,60 @@ class ResFcnModel(uabMakeNetwork_UNet.UnetModel):
 
         pred = tf.add(up1, up2)
         self.pred = tf.add(pred, up3)
+
+
+class ResFcnUnetModel(ResFcnModel):
+    def create_graph(self, x_name, class_num):
+        self.class_num = class_num
+        sfn = self.sfn
+        H, W, _ = self.inputs[x_name].get_shape().as_list()[1:]
+
+        # pad & down sample
+        with tf.variable_scope('layer_initial'):
+            net = tf.pad(self.inputs[x_name], tf.constant([[0,0], [3,3], [3,3], [0,0]]))
+            net = tf.layers.conv2d(net, sfn, (7, 7), strides=(2, 2), activation=None, padding='valid',
+                                   name='conv_initial')
+            net = tf.layers.batch_normalization(net, training=self.trainable, name='bn_initial')
+            net = tf.nn.relu(net, name='relu_initial')
+            net = tf.layers.max_pooling2d(net, (3, 3), strides=(2, 2), name='pool_initial')
+
+        # blocks
+        with tf.variable_scope('layer_1'):
+            down1 = self.conv_block(net, [sfn, sfn, sfn*4], self.trainable, name='conv1_1', stride=(1, 1))
+            down2 = self.identity_block(down1, [sfn, sfn, sfn*4], self.trainable, name='identity1_1')
+            down3 = self.identity_block(down2, [sfn, sfn, sfn*4], self.trainable, name='identity1_2')
+
+        with tf.variable_scope('layer_2'):
+            down4 = self.conv_block(down3, [sfn*2, sfn*2, sfn*8], self.trainable, name='conv2_1')
+            down5 = self.identity_block(down4, [sfn*2, sfn*2, sfn*8], self.trainable, name='identity2_1')
+            down6 = self.identity_block(down5, [sfn*2, sfn*2, sfn*8], self.trainable, name='identity2_2')
+            down7 = self.identity_block(down6, [sfn*2, sfn*2, sfn*8], self.trainable, name='identity2_3')
+
+        with tf.variable_scope('layer_3'):
+            down8 = self.conv_block(down7, [sfn*4, sfn*4, sfn*16], self.trainable, name='conv3_1')
+            down9 = self.identity_block(down8, [sfn*4, sfn*4, sfn*16], self.trainable, name='identity3_1')
+            down10 = self.identity_block(down9, [sfn*4, sfn*4, sfn*16], self.trainable, name='identity3_2')
+            down11 = self.identity_block(down10, [sfn*4, sfn*4, sfn*16], self.trainable, name='identity3_3')
+            down12 = self.identity_block(down11, [sfn*4, sfn*4, sfn*16], self.trainable, name='identity3_4')
+            down13 = self.identity_block(down12, [sfn*4, sfn*4, sfn*16], self.trainable, name='identity3_5')
+
+        with tf.variable_scope('layer_4'):
+            down14 = self.conv_block(down13, [sfn*8, sfn*8, sfn*32], self.trainable, name='conv4_1')
+            down15 = self.identity_block(down14, [sfn*8, sfn*8, sfn*32], self.trainable, name='identity4_1')
+            down16 = self.identity_block(down15, [sfn*8, sfn*8, sfn*32], self.trainable, name='identity4_2')
+
+        # upsample & fuse
+        with tf.variable_scope('up_1'):
+            up1 = tf.layers.conv2d(down7, self.class_num, (1, 1), activation=None, name='conv_1')
+            up1 = tf.image.resize_bilinear(up1, tf.constant([H, W]), name='upsample_1')
+
+        with tf.variable_scope('up_2'):
+            up2 = tf.layers.conv2d(down13, self.class_num, (1, 1), activation=None, name='conv_1')
+            up2 = tf.image.resize_bilinear(up2, tf.constant([H, W]), name='upsample_1')
+
+        with tf.variable_scope('up_3'):
+            up3 = tf.layers.conv2d(down16, self.class_num, (1, 1), activation=None, name='conv_1')
+            up3 = tf.image.resize_bilinear(up3, tf.constant([H, W]), name='upsample_1')
+
+        pred = tf.add(up1, up2)
+        self.pred = tf.add(pred, up3)

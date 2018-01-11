@@ -7,12 +7,12 @@ Created on Mon Nov 06 17:55:23 2017
 some globally utile functions
 """
 
-
+import os
 import time
 from sys import platform
-import os
-import numpy as np
 import imageio
+import numpy as np
+import tensorflow as tf
 
 sl = os.path.sep
 
@@ -219,6 +219,30 @@ def image_summary(image, truth, prediction, img_mean=np.array((0, 0, 0), dtype=n
     pred_img = decode_labels(pred_labels)
 
     return np.concatenate([image+img_mean, truth_img, pred_img], axis=2)
+
+
+def tf_warn_level(warn_level=3):
+    """
+    Filter out info from tensorflow output
+    :param warn_level: can be 0 or 1 or 2
+    :return:
+    """
+    if isinstance(warn_level, int):
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = str(warn_level)
+    else:
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = warn_level
+
+
+def add_mask(orig_img, mask, mask_val, mask_1=1):
+    mask_locs = np.where(mask == mask_1)
+    locs_num = len(mask_locs[0])
+    if mask_val[0] is not None:
+        orig_img[mask_locs[0], mask_locs[1], np.zeros(locs_num, dtype=int)] = mask_val[0]
+    if mask_val[1] is not None:
+        orig_img[mask_locs[0], mask_locs[1], np.ones(locs_num, dtype=int)] = mask_val[1]
+    if mask_val[2] is not None:
+        orig_img[mask_locs[0], mask_locs[1], 2*np.ones(locs_num, dtype=int)] = mask_val[2]
+    return orig_img
 
 
 class runtime_decorator(object):
