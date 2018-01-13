@@ -9,5 +9,5 @@
 
 # Known Bugs
 - [ ] Loading a model to fine tune will cause problem by calling run() with pretrained_model_dir set in bohaoCustom/uabMakeNetwork_Unet.py
-- [ ] Unnecessary patches are extracted when input size equals tile size at testing
+- [X] Unnecessary patches are extracted when input size equals tile size at testing
 - [ ] Redundant reader initialization in model.evaluate()

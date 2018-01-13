@@ -95,8 +95,12 @@ def crop_image(block, size, corner):
 def patchify(block, tile_dim, patch_size, overlap=0):
     max_h = tile_dim[0] - patch_size[0]
     max_w = tile_dim[1] - patch_size[1]
-    h_step = np.ceil(tile_dim[0] / (patch_size[0] - overlap))
-    w_step = np.ceil(tile_dim[1] / (patch_size[1] - overlap))
+    if max_h > 0 and max_w > 0:
+        h_step = np.ceil(tile_dim[0] / (patch_size[0] - overlap))
+        w_step = np.ceil(tile_dim[1] / (patch_size[1] - overlap))
+    else:
+        h_step = 1
+        w_step = 1
     patch_grid_h = np.floor(np.linspace(0, max_h, h_step)).astype(np.int32)
     patch_grid_w = np.floor(np.linspace(0, max_w, w_step)).astype(np.int32)
     for corner_h in patch_grid_h:
