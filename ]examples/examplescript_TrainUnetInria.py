@@ -84,7 +84,7 @@ with tf.name_scope('image_loader'):
     dataReader_train = uabDataReader.ImageLabelReader([3], [0, 1, 2], patchDir, file_list_train, chip_size, tile_size,
                                                       batch_size, dataAug='flip,rotate', block_mean=np.append([0], img_mean))
     # no augmentation needed for validation
-    dataReader_valid = uabDataReader.ImageLabelReader([3], [0, 1, 2], patchDir, file_list_train, chip_size, tile_size,
+    dataReader_valid = uabDataReader.ImageLabelReader([3], [0, 1, 2], patchDir, file_list_valid, chip_size, tile_size,
                                                       batch_size, dataAug=' ', block_mean=np.append([0], img_mean))
 
 # train
