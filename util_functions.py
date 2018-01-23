@@ -179,14 +179,16 @@ def decode_labels(label):
     return outputs
 
 
-def iou_metric(truth, pred, truth_val=1):
+def iou_metric(truth, pred, truth_val=1, divide_flag=False):
     truth = truth / truth_val
     pred = pred / truth_val
     truth = truth.flatten()
     pred = pred.flatten()
     intersect = truth*pred
-    # return sum(intersect == 1) / (sum(truth == 1)+sum(pred == 1)-sum(intersect == 1))
-    return sum(intersect == 1) / sum(truth+pred >= 1)
+    if divide_flag:
+        return np.sum(intersect == 1), np.sum(truth+pred >= 1)
+    else:
+        return np.sum(intersect == 1) / np.sum(truth+pred >= 1)
 
 
 def pad_prediction(image, prediction):

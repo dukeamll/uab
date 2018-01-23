@@ -249,7 +249,8 @@ class UnetModel(network.Network):
             return util_functions.get_pred_labels(image_pred) * truth_val
 
     def evaluate(self, rgb_list, gt_list, rgb_dir, gt_dir, input_size, tile_size, batch_size, img_mean,
-                 model_dir, gpu=None, save_result=True, show_figure=False, verb=True, ds_name='default'):
+                 model_dir, gpu=None, save_result=True, save_result_parent_dir=None, show_figure=False,
+                 verb=True, ds_name='default'):
         if show_figure:
             import matplotlib.pyplot as plt
         iou_record = []
@@ -283,17 +284,21 @@ class UnetModel(network.Network):
                             gpu=gpu)
 
             truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
-            iou = util_functions.iou_metric(truth_label_img, pred)
+            iou = util_functions.iou_metric(truth_label_img, pred, divide_flag=True)
             iou_record.append(iou)
             iou_return[tile_name] = iou
 
             duration = time.time() - start_time
             if verb:
-                print('{} mean IoU={:.3f}, duration: {:.3f}'.format(tile_name, iou, duration))
+                print('{} mean IoU={:.3f}, duration: {:.3f}'.format(tile_name, iou[0]/iou[1], duration))
 
             # save results
             if save_result:
-                score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
+                if save_result_parent_dir is None:
+                    score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
+                else:
+                    score_save_dir = os.path.join(uabRepoPaths.evalPath, save_result_parent_dir,
+                                                  self.model_name, ds_name)
                 pred_save_dir = os.path.join(score_save_dir, 'pred')
                 if not os.path.exists(score_save_dir):
                     os.makedirs(score_save_dir)

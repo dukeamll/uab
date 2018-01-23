@@ -43,8 +43,15 @@ class Network(object):
         if saver is None:
             saver = tf.train.Saver(var_list=tf.global_variables())
         if os.path.exists(model_path) and tf.train.get_checkpoint_state(model_path):
-            latest_check_point = tf.train.latest_checkpoint(model_path)
-            saver.restore(sess, latest_check_point)
+            try:
+                latest_check_point = tf.train.latest_checkpoint(model_path)
+                saver.restore(sess, latest_check_point)
+            except tf.errors.NotFoundError:
+                with open(os.path.join(model_path, 'checkpoint'), 'r') as f:
+                    ckpts = f.readlines()
+                ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
+                latest_check_point = os.path.join(model_path, ckpt_file_name)
+                saver.restore(sess, latest_check_point)
             print('loaded {}'.format(latest_check_point))
 
     def get_unique_name(self, suffix):
