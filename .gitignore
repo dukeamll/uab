@@ -3,7 +3,6 @@
 *.wav
 *.pyc
 *.bak
-uabRepoPaths.py
 # temp files
 *~
 temp.py
