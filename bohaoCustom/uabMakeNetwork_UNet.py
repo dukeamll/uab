@@ -319,10 +319,14 @@ class UnetModel(network.Network):
                 plt.suptitle('{} Results on {} IoU={:3f}'.format(self.model_name, file_name_truth.split('_')[0], iou))
                 plt.show()
 
-        mean_iou = np.mean(iou_record)
+        mean_iou = np.mean([x[0]/x[1] for x in iou_record])
         print('Overall mean IoU={:.3f}'.format(mean_iou))
         if save_result:
-            score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
+            if save_result_parent_dir is None:
+                score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
+            else:
+                score_save_dir = os.path.join(uabRepoPaths.evalPath, save_result_parent_dir, self.model_name,
+                                              ds_name)
             with open(os.path.join(score_save_dir, 'result.txt'), 'a+') as file:
                 file.write('{}'.format(mean_iou))
 
