@@ -202,7 +202,8 @@ class uabCollection(object):
         :return: np array of meta data
         """
         metaInfoName = os.path.join(self.imDirectory, uabCollection.dataDirnames['meta'], uabCollection.metaInfoFile)
-        assert os.path.exists(metaInfoName)
+        if not os.path.exists(metaInfoName):
+            self.getMetaDataInfo(extId)
         means = np.zeros(len(extId))
 
         with open(metaInfoName, 'rb') as f:
