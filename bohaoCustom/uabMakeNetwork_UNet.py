@@ -147,13 +147,24 @@ class UnetModel(network.Network):
     def train(self, x_name, y_name, n_train, sess, summary_writer, n_valid=1000,
               train_reader=None, valid_reader=None,
               image_summary=None, verb_step=100, save_epoch=5,
-              img_mean=np.array((0, 0, 0), dtype=np.float32)):
+              img_mean=np.array((0, 0, 0), dtype=np.float32),
+              continue_dir=None):
         # define summary operations
         valid_cross_entropy_summary_op = tf.summary.scalar('xent_validation', self.valid_cross_entropy)
         valid_image_summary_op = tf.summary.image('Validation_images_summary', self.valid_images,
                                                   max_outputs=10)
-        for epoch in range(self.epochs):
-            for step in range(0, n_train, self.bs):
+
+        if continue_dir is not None:
+            self.load(continue_dir, sess)
+            gs = sess.run(self.global_step)
+            start_epoch = int(np.ceil(gs/n_train*self.bs))
+            start_step = gs - int(start_epoch*n_train/self.bs)
+        else:
+            start_epoch = 0
+            start_step = 0
+
+        for epoch in range(start_epoch, self.epochs):
+            for step in range(start_step, n_train, self.bs):
                 X_batch, y_batch = train_reader.readerAction(sess)
                 _, self.global_step_value = sess.run([self.optimizer, self.global_step],
                                                      feed_dict={self.inputs[x_name]:X_batch,
@@ -210,7 +221,7 @@ class UnetModel(network.Network):
 
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
-            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1):
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -233,7 +244,7 @@ class UnetModel(network.Network):
                     self.train('X', 'Y', self.n_train, sess, train_summary_writer,
                                n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
                                image_summary=util_functions.image_summary, img_mean=img_mean,
-                               verb_step=verb_step, save_epoch=save_epoch)
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir)
                 finally:
                     coord.request_stop()
                     coord.join(threads)
@@ -429,7 +440,7 @@ class UnetModelCrop(UnetModel):
 
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
-            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1):
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -452,7 +463,7 @@ class UnetModelCrop(UnetModel):
                     self.train('X', 'Y', self.n_train, sess, train_summary_writer,
                                n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
                                image_summary=util_functions.image_summary, img_mean=img_mean,
-                               verb_step=verb_step, save_epoch=save_epoch)
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir)
                 finally:
                     coord.request_stop()
                     coord.join(threads)

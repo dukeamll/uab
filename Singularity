@@ -1,5 +1,5 @@
-Bootstrap: docker
-From: tensorflow/tensorflow:latest-gpu-py3
+Bootstrap: localimage
+From: /hdd/tensorflow-latest-gpu-py3.simg
 
 %help
 This is a sigularity definition file for uab repo(https://github.com/dukeamll/uab) with Tensorflow and GPU usage.
