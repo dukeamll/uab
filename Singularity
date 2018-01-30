@@ -4,7 +4,7 @@ From: tensorflow/tensorflow:latest-gpu-py3
 %help
 This is a sigularity definition file for uab repo(https://github.com/dukeamll/uab) with Tensorflow and GPU usage.
 For more info of singularity, check http://singularity.lbl.gov/quickstart.
-This singularity image can help you setup environment on any linux system with necessary libraries and drivers.
+This singularity image can help you setup environment on any linux system with necessary libraries.
 
 %post
     echo "Installing necessary packages"
