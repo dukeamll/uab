@@ -97,10 +97,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
             summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)
 
             if image_summary is not None:
-                pred_valid = tf.image.resize_bilinear(pred_valid, self.input_size)
-                print(X_batch_val.shape)
-                print(y_batch_val.shape)
-                print(pred_valid.shape)
+                pred_valid = sess.run(tf.image.resize_bilinear(pred_valid, self.input_size))
                 valid_image_summary = sess.run(valid_image_summary_op,
                                                feed_dict={self.valid_images:
                                                               image_summary(X_batch_val[:,:,:,:3], y_batch_val, pred_valid,
