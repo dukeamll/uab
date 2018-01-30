@@ -155,6 +155,8 @@ def get_pred_labels(pred):
     :param pred: output of CNN softmax function
     :return: predicted labels
     """
+    print(pred.shape)
+    print(type(pred))
     if len(pred.shape) == 4:
         n, h, w, c = pred.shape
         outputs = np.zeros((n, h, w, 1), dtype=np.uint8)

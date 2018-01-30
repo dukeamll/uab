@@ -1,5 +1,5 @@
-Bootstrap: localimage
-From: /hdd/tensorflow-latest-gpu-py3.simg
+Bootstrap: docker
+From: tensorflow/tensorflow:latest-gpu-py3
 
 %help
 This is a sigularity definition file for uab repo(https://github.com/dukeamll/uab) with Tensorflow and GPU usage.
@@ -10,7 +10,7 @@ This singularity image can help you setup environment on any linux system with n
     echo "Installing necessary packages"
     apt-get -y update
     apt-get -y install expect
-    apt-get -y install python-dev
+    apt-get -y install python3-dev
     apt-get -y install python3-numpy
     apt-get -y install python3-dev
     apt-get -y install python3-pip
