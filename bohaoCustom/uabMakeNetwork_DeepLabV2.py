@@ -4,8 +4,12 @@ https://arxiv.org/pdf/1606.00915.pdf
 This architecture comes from this implementation:
 https://github.com/zhengyang-wang/Deeplab-v2--ResNet-101--Tensorflow/blob/master/model.py
 """
+import os
+import time
 import numpy as np
 import tensorflow as tf
+import util_functions
+import uabUtilreader
 from bohaoCustom import uabMakeNetwork_UNet
 from bohaoCustom import uabMakeNetwork as network
 
@@ -67,6 +71,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
             start_step = 0
 
         for epoch in range(start_epoch, self.epochs):
+            start_time = time.time()
             for step in range(start_step, n_train, self.bs):
                 X_batch, y_batch = train_reader.readerAction(sess)
                 _, self.global_step_value = sess.run([self.optimizer, self.global_step],
@@ -91,7 +96,8 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
                                                                       self.trainable: False})
                 cross_entropy_valid_mean.append(cross_entropy_valid)
             cross_entropy_valid_mean = np.mean(cross_entropy_valid_mean)
-            print('Validation cross entropy: {:.3f}'.format(cross_entropy_valid_mean))
+            duration = time.time() - start_time
+            print('Validation cross entropy: {:.3f}, duration: {:.3f}'.format(cross_entropy_valid_mean, duration))
             valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op,
                                                    feed_dict={self.valid_cross_entropy: cross_entropy_valid_mean})
             summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)
@@ -107,6 +113,48 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
             if epoch % save_epoch == 0:
                 saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
                 saver.save(sess, '{}/model_{}.ckpt'.format(self.ckdir, epoch), global_step=self.global_step)
+
+    def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
+            isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None):
+        if gpu is not None:
+            os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+        if isTrain:
+            coord = tf.train.Coordinator()
+            with tf.Session(config=self.config) as sess:
+                # init model
+                init = tf.global_variables_initializer()
+                sess.run(init)
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                # load model
+                if pretrained_model_dir is not None:
+                    if layers2load is not None:
+                        self.load_weights(pretrained_model_dir, layers2load)
+                    else:
+                        restore_var = [v for v in tf.global_variables() if 'fc' not in v.name]
+                        loader = tf.train.Saver(var_list=restore_var)
+                        self.load(pretrained_model_dir, sess, loader)
+                threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+                try:
+                    train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
+                    self.train('X', 'Y', self.n_train, sess, train_summary_writer,
+                               n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
+                               image_summary=util_functions.image_summary, img_mean=img_mean,
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir)
+                finally:
+                    coord.request_stop()
+                    coord.join(threads)
+                    saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)
+        else:
+            with tf.Session() as sess:
+                init = tf.global_variables_initializer()
+                sess.run(init)
+                self.load(pretrained_model_dir, sess)
+                self.model_name = pretrained_model_dir.split('/')[-1]
+                result = self.test('X', sess, test_reader)
+            image_pred = uabUtilreader.un_patchify(result, tile_size, patch_size)
+            return util_functions.get_pred_labels(image_pred) * truth_val
 
     def build_encoder(self, x_name):
         print("-----------build encoder: deeplab initial-----------")

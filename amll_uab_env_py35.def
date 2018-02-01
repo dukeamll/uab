@@ -1,0 +1,33 @@
+Bootstrap: localimage
+From: /hdd/Singularity/tensorflow-gpu.img
+
+%help
+This is a sigularity definition file for uab repo(https://github.com/dukeamll/uab) with Tensorflow and GPU usage.
+For more info of singularity, check http://singularity.lbl.gov/quickstart.
+This singularity image can help you setup environment on any linux system with necessary libraries.
+
+%post
+    echo "Installing necessary packages"
+    apt-get -y update
+    apt-get -y install expect
+    apt-get -y install python3-dev
+    apt-get -y install python3-pip
+    apt-get -y install python3-wheel
+    apt-get -y install wget
+    apt-get -y install lib32gcc1
+    apt-get -y install gcc
+    wget https://bootstrap.pypa.io/get-pip.py
+    python3.5 get-pip.py
+    python3.5 -m pip
+    python3.5 -m pip install numpy
+    python3.5 -m pip install imageio
+    python3.5 -m pip install pandas
+    python3.5 -m pip install matplotlib
+    python3.5 -m pip install scipy
+    python3.5 -m pip install scikit-learn
+    python3.5 -m pip install scikit-image
+    python3.5 -m pip install six
+    python3.5 -m pip install future
+    python3.5 -m pip install pip
+    python3.5 -m pip install tqdm
+    python3.5 -m pip install pillow
