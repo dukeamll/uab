@@ -235,3 +235,67 @@ class FPNRes101(uabMakeNetwork_UNet.UnetModel):
                 result = self.test('X', sess, test_reader)
             image_pred = uabUtilreader.un_patchify(result, tile_size, patch_size)
             return util_functions.get_pred_labels(image_pred) * truth_val
+
+
+class FPNRes101_V2(FPNRes101):
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=0.2,
+                 learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
+                 batch_size=5, start_filter_num=32):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.name = 'FPNRes101_V2'
+        self.model_name = self.get_unique_name(model_name)
+        self.sfn = start_filter_num
+        self.learning_rate = None
+        self.valid_cross_entropy = tf.placeholder(tf.float32, [])
+        self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
+                                                            input_size[1] * 3, 3], name='validation_images')
+        self.channel_axis = 3
+        self.update_ops = None
+        self.encoder_name = 'res101'
+
+    def create_graph(self, x_name, class_num):
+        self.class_num = class_num
+        self.input_size = self.inputs[x_name].shape[1:3]
+
+        print("-----------build encoder: %s-----------" % self.encoder_name)
+        outputs = self._start_block('conv1', x_name)
+        print("after start block:", outputs.shape)
+        c2, c3, c4, c5 = self.build_encoder(x_name)
+
+        print("-----------build decoder-----------")
+        with tf.variable_scope('decoder'):
+            l0 = self.right_conv(self.inputs[x_name], 256, 'right_input')
+            l1 = self.right_conv(c5, 256, 'right_0')
+            l2 = self.down_add(l1, c4, 256, 'up1')
+            print('after up 1:', l2.shape)
+            l3 = self.down_add(l2, c3, 256, 'up2')
+            print('after up 2:', l3.shape)
+            l4 = self.down_add(l3, c2, 256, 'up3')
+            print('after up 3:', l4.shape)
+
+            l5 = self.fpn(l0, l1, l2, l3, l4)
+            print('after up 4:', l5.shape)
+            self.pred = self._conv2d(l5, 3, self.class_num, 1, 'conv_final')
+            print('pred shape:', self.pred.shape)
+
+            self.output = tf.nn.softmax(self.pred)
+
+
+    #******************run_id = 1*********************#
+    def class_subnet(self, x, c_num, idx):
+        with tf.variable_scope('classnet_{}'.format(idx)):
+            output = self._conv2d(x, 3, c_num, 1, name='classnet_1')
+            output = self._conv2d(output, 3, c_num, 1, name='classnet_2')
+            return self._conv2d(output, 3, self.class_num, 1, name='classnet_3')
+
+    def fpn(self, l0, l1, l2, l3, l4):
+        #***************run_id = 1*******************#
+        l0_up = self.class_subnet(l0, 256, idx=0)
+        l1_up = self.down_upsample(self.class_subnet(l1, 256, idx=1), 32, 'up1', bilinear=True)
+        l2_up = self.down_upsample(self.class_subnet(l2, 256, idx=2), 16, 'up2', bilinear=True)
+        l3_up = self.down_upsample(self.class_subnet(l3, 256, idx=3), 8, 'up3', bilinear=True)
+        l4_up = self.down_upsample(self.class_subnet(l4, 256, idx=4), 4, 'up4', bilinear=True)
+        outputs = tf.concat([l0_up, l1_up, l2_up, l3_up, l4_up], axis=3)
+
+        return outputs

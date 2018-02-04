@@ -8,6 +8,6 @@
 - [ ] uabDataReader: none queue iterator data aug
 
 # Known Bugs
-- [ ] Loading a model to fine tune will cause problem by calling run() with pretrained_model_dir set in bohaoCustom/uabMakeNetwork_Unet.py
+- [X] Loading a model to fine tune will cause problem by calling run() with pretrained_model_dir set in bohaoCustom/uabMakeNetwork_Unet.py
 - [X] Unnecessary patches are extracted when input size equals tile size at testing
-- [ ] Redundant reader initialization in model.evaluate()
+- [X] Redundant reader initialization in model.evaluate()
