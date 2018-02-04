@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import imageio
 import numpy as np
@@ -164,6 +165,7 @@ class UnetModel(network.Network):
             start_step = 0
 
         for epoch in range(start_epoch, self.epochs):
+            start_time = time.time()
             for step in range(start_step, n_train, self.bs):
                 X_batch, y_batch = train_reader.readerAction(sess)
                 _, self.global_step_value = sess.run([self.optimizer, self.global_step],
@@ -188,7 +190,9 @@ class UnetModel(network.Network):
                                                                       self.trainable: False})
                 cross_entropy_valid_mean.append(cross_entropy_valid)
             cross_entropy_valid_mean = np.mean(cross_entropy_valid_mean)
-            print('Validation cross entropy: {:.3f}'.format(cross_entropy_valid_mean))
+            duration = time.time() - start_time
+            print('Validation cross entropy: {:.3f}, duration: {:.3f}'.format(cross_entropy_valid_mean,
+                                                                              duration))
             valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op,
                                                    feed_dict={self.valid_cross_entropy: cross_entropy_valid_mean})
             summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)

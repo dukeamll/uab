@@ -53,6 +53,11 @@ class Network(object):
                 latest_check_point = os.path.join(model_path, ckpt_file_name)
                 saver.restore(sess, latest_check_point)
             print('loaded {}'.format(latest_check_point))
+        else:
+            #from tensorflow.python.tools.inspect_checkpoint import print_tensors_in_checkpoint_file
+            #print_tensors_in_checkpoint_file(file_name=model_path, tensor_name=False, all_tensors=True)
+            saver.restore(sess, model_path)
+            print('loaded {}'.format(model_path))
 
     def get_unique_name(self, suffix):
         if len(suffix) > 0:
