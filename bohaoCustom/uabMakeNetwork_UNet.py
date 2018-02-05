@@ -225,7 +225,7 @@ class UnetModel(network.Network):
 
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
-            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None):
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -241,7 +241,7 @@ class UnetModel(network.Network):
                     if layers2load is not None:
                         self.load_weights(pretrained_model_dir, layers2load)
                     else:
-                        self.load(pretrained_model_dir, sess, saver)
+                        self.load(pretrained_model_dir, sess, saver, epoch=load_epoch_num)
                 threads = tf.train.start_queue_runners(coord=coord, sess=sess)
                 try:
                     train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
@@ -257,7 +257,7 @@ class UnetModel(network.Network):
             with tf.Session() as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
-                self.load(pretrained_model_dir, sess)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num)
                 self.model_name = pretrained_model_dir.split('/')[-1]
                 result = self.test('X', sess, test_reader)
             image_pred = uabUtilreader.un_patchify(result, tile_size, patch_size)
@@ -265,9 +265,22 @@ class UnetModel(network.Network):
 
     def evaluate(self, rgb_list, gt_list, rgb_dir, gt_dir, input_size, tile_size, batch_size, img_mean,
                  model_dir, gpu=None, save_result=True, save_result_parent_dir=None, show_figure=False,
-                 verb=True, ds_name='default'):
+                 verb=True, ds_name='default', load_epoch_num=None):
         if show_figure:
             import matplotlib.pyplot as plt
+
+        if save_result:
+            self.model_name = model_dir.split('/')[-1]
+            if save_result_parent_dir is None:
+                score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
+            else:
+                score_save_dir = os.path.join(uabRepoPaths.evalPath, save_result_parent_dir,
+                                              self.model_name, ds_name)
+            if not os.path.exists(score_save_dir):
+                os.makedirs(score_save_dir)
+            with open(os.path.join(score_save_dir, 'result.txt'), 'w'):
+                pass
+
         iou_record = []
         iou_return = {}
         for file_name, file_name_truth in zip(rgb_list, gt_list):
@@ -296,7 +309,7 @@ class UnetModel(network.Network):
                             test_reader=rManager,
                             tile_size=tile_size,
                             patch_size=input_size,
-                            gpu=gpu)
+                            gpu=gpu, load_epoch_num=load_epoch_num)
 
             truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
             iou = util_functions.iou_metric(truth_label_img, pred, divide_flag=True)
@@ -309,14 +322,14 @@ class UnetModel(network.Network):
 
             # save results
             if save_result:
-                if save_result_parent_dir is None:
+                '''if save_result_parent_dir is None:
                     score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
                 else:
                     score_save_dir = os.path.join(uabRepoPaths.evalPath, save_result_parent_dir,
-                                                  self.model_name, ds_name)
+                                                  self.model_name, ds_name)'''
                 pred_save_dir = os.path.join(score_save_dir, 'pred')
-                if not os.path.exists(score_save_dir):
-                    os.makedirs(score_save_dir)
+                '''if not os.path.exists(score_save_dir):
+                    os.makedirs(score_save_dir)'''
                 if not os.path.exists(pred_save_dir):
                     os.makedirs(pred_save_dir)
                 imageio.imwrite(os.path.join(pred_save_dir, tile_name+'.png'), pred)
@@ -444,7 +457,7 @@ class UnetModelCrop(UnetModel):
 
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
-            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None):
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -460,7 +473,7 @@ class UnetModelCrop(UnetModel):
                     if layers2load is not None:
                         self.load_weights(pretrained_model_dir, layers2load)
                     else:
-                        self.load(pretrained_model_dir, sess, saver)
+                        self.load(pretrained_model_dir, sess, saver, epoch=load_epoch_num)
                 threads = tf.train.start_queue_runners(coord=coord, sess=sess)
                 try:
                     train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
@@ -477,7 +490,7 @@ class UnetModelCrop(UnetModel):
             with tf.Session() as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
-                self.load(pretrained_model_dir, sess)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num)
                 self.model_name = pretrained_model_dir.split('/')[-1]
                 result = self.test('X', sess, test_reader)
             image_pred = uabUtilreader.un_patchify_shrink(result,

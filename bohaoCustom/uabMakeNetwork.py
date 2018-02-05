@@ -1,4 +1,5 @@
 import os
+from glob import glob
 import tensorflow as tf
 
 
@@ -37,25 +38,29 @@ class Network(object):
             format(self.model_name, patch_size, self.bs, self.epochs, self.lr, self.ds, self.dr)
         self.ckdir = os.path.join(ckdir, dir_name)
 
-    def load(self, model_path, sess, saver=None):
+    def load(self, model_path, sess, saver=None, epoch=None):
         # this can only be called after create_graph()
         # loads all weights in a graph
         if saver is None:
             saver = tf.train.Saver(var_list=tf.global_variables())
         if os.path.exists(model_path) and tf.train.get_checkpoint_state(model_path):
-            try:
-                latest_check_point = tf.train.latest_checkpoint(model_path)
-                saver.restore(sess, latest_check_point)
-            except tf.errors.NotFoundError:
-                with open(os.path.join(model_path, 'checkpoint'), 'r') as f:
-                    ckpts = f.readlines()
-                ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
-                latest_check_point = os.path.join(model_path, ckpt_file_name)
-                saver.restore(sess, latest_check_point)
-            print('loaded {}'.format(latest_check_point))
+            if epoch is None:
+                try:
+                    latest_check_point = tf.train.latest_checkpoint(model_path)
+                    saver.restore(sess, latest_check_point)
+                except tf.errors.NotFoundError:
+                    with open(os.path.join(model_path, 'checkpoint'), 'r') as f:
+                        ckpts = f.readlines()
+                    ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
+                    latest_check_point = os.path.join(model_path, ckpt_file_name)
+                    saver.restore(sess, latest_check_point)
+                    print('loaded {}'.format(latest_check_point))
+            else:
+                ckpt_file_name = glob(os.path.join(model_path, 'model_{}.ckpt*.index'.format(epoch)))
+                ckpt_file_name = ckpt_file_name[0][:-6]
+                saver.restore(sess, ckpt_file_name)
+                print('loaded {}'.format(ckpt_file_name))
         else:
-            #from tensorflow.python.tools.inspect_checkpoint import print_tensors_in_checkpoint_file
-            #print_tensors_in_checkpoint_file(file_name=model_path, tensor_name=False, all_tensors=True)
             saver.restore(sess, model_path)
             print('loaded {}'.format(model_path))
 

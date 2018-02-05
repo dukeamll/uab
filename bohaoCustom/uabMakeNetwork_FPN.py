@@ -195,7 +195,7 @@ class FPNRes101(uabMakeNetwork_UNet.UnetModel):
 
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
-            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None):
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -214,7 +214,7 @@ class FPNRes101(uabMakeNetwork_UNet.UnetModel):
                         restore_var = [v for v in tf.global_variables() if 'resnet_v1' in v.name
                                        and 'Adam' not in v.name]
                         loader = tf.train.Saver(var_list=restore_var)
-                        self.load(pretrained_model_dir, sess, loader)
+                        self.load(pretrained_model_dir, sess, loader, epoch=load_epoch_num)
                 threads = tf.train.start_queue_runners(coord=coord, sess=sess)
                 try:
                     train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
@@ -230,7 +230,7 @@ class FPNRes101(uabMakeNetwork_UNet.UnetModel):
             with tf.Session() as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
-                self.load(pretrained_model_dir, sess)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num)
                 self.model_name = pretrained_model_dir.split('/')[-1]
                 result = self.test('X', sess, test_reader)
             image_pred = uabUtilreader.un_patchify(result, tile_size, patch_size)
