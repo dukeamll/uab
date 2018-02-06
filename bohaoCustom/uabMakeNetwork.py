@@ -48,6 +48,7 @@ class Network(object):
                 try:
                     latest_check_point = tf.train.latest_checkpoint(model_path)
                     saver.restore(sess, latest_check_point)
+                    print('loaded {}'.format(latest_check_point))
                 except tf.errors.NotFoundError:
                     with open(os.path.join(model_path, 'checkpoint'), 'r') as f:
                         ckpts = f.readlines()
