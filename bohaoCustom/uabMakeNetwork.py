@@ -45,17 +45,23 @@ class Network(object):
             saver = tf.train.Saver(var_list=tf.global_variables())
         if os.path.exists(model_path) and tf.train.get_checkpoint_state(model_path):
             if epoch is None:
-                try:
-                    latest_check_point = tf.train.latest_checkpoint(model_path)
-                    saver.restore(sess, latest_check_point)
-                    print('loaded {}'.format(latest_check_point))
-                except tf.errors.NotFoundError:
-                    with open(os.path.join(model_path, 'checkpoint'), 'r') as f:
-                        ckpts = f.readlines()
-                    ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
-                    latest_check_point = os.path.join(model_path, ckpt_file_name)
-                    saver.restore(sess, latest_check_point)
-                    print('loaded {}'.format(latest_check_point))
+                best_model_path = glob(os.path.join(model_path, 'best_model.ckpt*.index'))
+                if len(best_model_path) > 0:
+                    best_model_name = best_model_path[0][:-6]
+                    saver.restore(sess, best_model_name)
+                    print('loaded {}'.format(best_model_name))
+                else:
+                    try:
+                        latest_check_point = tf.train.latest_checkpoint(model_path)
+                        saver.restore(sess, latest_check_point)
+                        print('loaded {}'.format(latest_check_point))
+                    except tf.errors.NotFoundError:
+                        with open(os.path.join(model_path, 'checkpoint'), 'r') as f:
+                            ckpts = f.readlines()
+                        ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
+                        latest_check_point = os.path.join(model_path, ckpt_file_name)
+                        saver.restore(sess, latest_check_point)
+                        print('loaded {}'.format(latest_check_point))
             else:
                 ckpt_file_name = glob(os.path.join(model_path, 'model_{}.ckpt*.index'.format(epoch)))
                 ckpt_file_name = ckpt_file_name[0][:-6]

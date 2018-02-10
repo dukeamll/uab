@@ -155,7 +155,7 @@ class UnetModel(network.Network):
         valid_image_summary_op = tf.summary.image('Validation_images_summary', self.valid_images,
                                                   max_outputs=10)
 
-        if continue_dir is not None:
+        if continue_dir is not None and os.path.exists(continue_dir):
             self.load(continue_dir, sess)
             gs = sess.run(self.global_step)
             start_epoch = int(np.ceil(gs/n_train*self.bs))
@@ -164,6 +164,7 @@ class UnetModel(network.Network):
             start_epoch = 0
             start_step = 0
 
+        cross_entropy_valid_min = np.inf
         for epoch in range(start_epoch, self.epochs):
             start_time = time.time()
             for step in range(start_step, n_train, self.bs):
@@ -196,6 +197,10 @@ class UnetModel(network.Network):
             valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op,
                                                    feed_dict={self.valid_cross_entropy: cross_entropy_valid_mean})
             summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)
+            if cross_entropy_valid_mean < cross_entropy_valid_min:
+                cross_entropy_valid_min = cross_entropy_valid_mean
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir), global_step=self.global_step)
 
             if image_summary is not None:
                 valid_image_summary = sess.run(valid_image_summary_op,
