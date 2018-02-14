@@ -200,7 +200,7 @@ class UnetModel(network.Network):
             if cross_entropy_valid_mean < cross_entropy_valid_min:
                 cross_entropy_valid_min = cross_entropy_valid_mean
                 saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
-                saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir), global_step=self.global_step)
+                saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir))
 
             if image_summary is not None:
                 valid_image_summary = sess.run(valid_image_summary_op,

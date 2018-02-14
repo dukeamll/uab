@@ -121,7 +121,8 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
 
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
-            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None):
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
+            fineTune=False):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -137,9 +138,12 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
                     if layers2load is not None:
                         self.load_weights(pretrained_model_dir, layers2load)
                     else:
-                        restore_var = [v for v in tf.global_variables() if 'fc' not in v.name]
-                        loader = tf.train.Saver(var_list=restore_var)
-                        self.load(pretrained_model_dir, sess, loader, epoch=load_epoch_num)
+                        if not fineTune:
+                            restore_var = [v for v in tf.global_variables() if 'fc' not in v.name]
+                            loader = tf.train.Saver(var_list=restore_var)
+                            self.load(pretrained_model_dir, sess, loader, epoch=load_epoch_num)
+                        else:
+                            self.load(pretrained_model_dir, sess, saver, epoch=load_epoch_num)
                 threads = tf.train.start_queue_runners(coord=coord, sess=sess)
                 try:
                     train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
