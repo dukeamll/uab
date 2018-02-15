@@ -4,6 +4,7 @@ import time
 import imageio
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.ops import array_ops
 import util_functions
 import uabUtilreader
 import uabDataReader
@@ -108,7 +109,7 @@ class UnetModel(network.Network):
                                                         tf.cast(n_train/self.bs * self.ds, tf.int32),
                                                         self.dr, staircase=True)
 
-    def make_loss(self, y_name, loss_type='xent'):
+    def make_loss(self, y_name, loss_type='xent', **kwargs):
         # TODO loss type IoU
         with tf.variable_scope('loss'):
             pred_flat = tf.reshape(self.pred, [-1, self.class_num])
@@ -116,7 +117,23 @@ class UnetModel(network.Network):
             indices = tf.squeeze(tf.where(tf.less_equal(y_flat, self.class_num - 1)), 1)
             gt = tf.gather(y_flat, indices)
             prediction = tf.gather(pred_flat, indices)
-            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
+            if loss_type == 'xent':
+                self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
+            else:
+                # focal loss: this comes from
+                # https://github.com/ailias/Focal-Loss-implement-on-Tensorflow/blob/master/focal_loss.py
+                if 'alpha' not in kwargs:
+                    kwargs['alpha'] = 0.25
+                if 'gamma' not in kwargs:
+                    kwargs['gamma'] = 2
+                sigmoid_p = tf.nn.sigmoid(prediction)
+                zeros = array_ops.zeros_like(sigmoid_p, dtype=sigmoid_p.dtype)
+                pos_p_sub = array_ops.where(gt >= sigmoid_p, gt - sigmoid_p, zeros)
+                neg_p_sub = array_ops.where(gt > zeros, zeros, sigmoid_p)
+                per_entry_cross_ent = - kwargs['alpha'] * (pos_p_sub ** kwargs['gamma']) * tf.log(tf.clip_by_value(
+                    sigmoid_p, 1e-8, 1.0)) - (1- kwargs['alpha']) * (neg_p_sub ** kwargs['gamma']) * tf.log(
+                    tf.clip_by_value(1.0 - sigmoid_p, 1e-8, 1.0))
+                self.loss = tf.reduce_sum(per_entry_cross_ent)
 
     def make_update_ops(self, x_name, y_name):
         tf.add_to_collection('inputs', self.inputs[x_name])
@@ -406,7 +423,7 @@ class UnetModelCrop(UnetModel):
         self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
         self.output = tf.nn.softmax(self.pred)
 
-    def make_loss(self, y_name, loss_type='xent'):
+    def make_loss(self, y_name, loss_type='xent', **kwargs):
         with tf.variable_scope('loss'):
             pred_flat = tf.reshape(self.pred, [-1, self.class_num])
             _, w, h, _ = self.inputs[y_name].get_shape().as_list()
@@ -415,7 +432,23 @@ class UnetModelCrop(UnetModel):
             indices = tf.squeeze(tf.where(tf.less_equal(y_flat, self.class_num - 1)), 1)
             gt = tf.gather(y_flat, indices)
             prediction = tf.gather(pred_flat, indices)
-            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
+            if loss_type == 'xent':
+                self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
+            else:
+                # focal loss: this comes from
+                # https://github.com/ailias/Focal-Loss-implement-on-Tensorflow/blob/master/focal_loss.py
+                if 'alpha' not in kwargs:
+                    kwargs['alpha'] = 0.25
+                if 'gamma' not in kwargs:
+                    kwargs['gamma'] = 2
+                sigmoid_p = tf.nn.sigmoid(prediction)
+                zeros = array_ops.zeros_like(sigmoid_p, dtype=sigmoid_p.dtype)
+                pos_p_sub = array_ops.where(gt >= sigmoid_p, gt - sigmoid_p, zeros)
+                neg_p_sub = array_ops.where(gt > zeros, zeros, sigmoid_p)
+                per_entry_cross_ent = - kwargs['alpha'] * (pos_p_sub ** kwargs['gamma']) * tf.log(tf.clip_by_value(
+                    sigmoid_p, 1e-8, 1.0)) - (1- kwargs['alpha']) * (neg_p_sub ** kwargs['gamma']) * tf.log(
+                    tf.clip_by_value(1.0 - sigmoid_p, 1e-8, 1.0))
+                self.loss = tf.reduce_sum(per_entry_cross_ent)
 
     def load_weights_append_first_layer(self, ckpt_dir, layers2load, conv1_weight, check_weight=False):
         # this functino load weights from pretrained model and add extra filters to first layer

@@ -8,6 +8,7 @@ import os
 import time
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.ops import array_ops
 import util_functions
 import uabUtilreader
 from bohaoCustom import uabMakeNetwork_UNet
@@ -40,7 +41,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
 
         self.output = tf.image.resize_bilinear(tf.nn.softmax(self.pred), self.input_size)
 
-    def make_loss(self, y_name, loss_type='xent'):
+    def make_loss(self, y_name, loss_type='xent', **kwargs):
         # TODO loss type IoU
         with tf.variable_scope('loss'):
             pred_flat = tf.reshape(self.pred, [-1, self.class_num])
@@ -49,7 +50,23 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
             indices = tf.squeeze(tf.where(tf.less_equal(y_flat, self.class_num - 1)), 1)
             gt = tf.gather(y_flat, indices)
             prediction = tf.gather(pred_flat, indices)
-            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
+            if loss_type == 'xent':
+                self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
+            else:
+                # focal loss: this comes from
+                # https://github.com/ailias/Focal-Loss-implement-on-Tensorflow/blob/master/focal_loss.py
+                if 'alpha' not in kwargs:
+                    kwargs['alpha'] = 0.25
+                if 'gamma' not in kwargs:
+                    kwargs['gamma'] = 2
+                sigmoid_p = tf.nn.sigmoid(prediction)
+                zeros = array_ops.zeros_like(sigmoid_p, dtype=sigmoid_p.dtype)
+                pos_p_sub = array_ops.where(gt >= sigmoid_p, gt - sigmoid_p, zeros)
+                neg_p_sub = array_ops.where(gt > zeros, zeros, sigmoid_p)
+                per_entry_cross_ent = - kwargs['alpha'] * (pos_p_sub ** kwargs['gamma']) * tf.log(tf.clip_by_value(
+                    sigmoid_p, 1e-8, 1.0)) - (1- kwargs['alpha']) * (neg_p_sub ** kwargs['gamma']) * tf.log(
+                    tf.clip_by_value(1.0 - sigmoid_p, 1e-8, 1.0))
+                self.loss = tf.reduce_sum(per_entry_cross_ent)
 
     def train(self, x_name, y_name, n_train, sess, summary_writer, n_valid=1000,
               train_reader=None, valid_reader=None,
@@ -500,7 +517,8 @@ class DeeplabV3(DeeplabV2):
 
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
-            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None):
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
+            fineTune=False):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -516,10 +534,17 @@ class DeeplabV3(DeeplabV2):
                     if layers2load is not None:
                         self.load_weights(pretrained_model_dir, layers2load)
                     else:
-                        restore_var = [v for v in tf.global_variables() if 'resnet_v1' in v.name and
+                        '''restore_var = [v for v in tf.global_variables() if 'resnet_v1' in v.name and
                                        not 'Adam' in v.name]
                         loader = tf.train.Saver(var_list=restore_var)
-                        self.load(pretrained_model_dir, sess, loader, epoch=load_epoch_num)
+                        self.load(pretrained_model_dir, sess, loader, epoch=load_epoch_num)'''
+                        if not fineTune:
+                            restore_var = [v for v in tf.global_variables() if 'resnet_v1' in v.name and
+                                       not 'Adam' in v.name]
+                            loader = tf.train.Saver(var_list=restore_var)
+                            self.load(pretrained_model_dir, sess, loader, epoch=load_epoch_num)
+                        else:
+                            self.load(pretrained_model_dir, sess, saver, epoch=load_epoch_num)
                 threads = tf.train.start_queue_runners(coord=coord, sess=sess)
                 try:
                     train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
