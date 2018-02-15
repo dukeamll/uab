@@ -337,7 +337,7 @@ class UnetModel(network.Network):
                     os.makedirs(score_save_dir)'''
                 if not os.path.exists(pred_save_dir):
                     os.makedirs(pred_save_dir)
-                imageio.imwrite(os.path.join(pred_save_dir, tile_name+'.png'), pred)
+                imageio.imsave(os.path.join(pred_save_dir, tile_name+'.png'), pred.astype(np.uint8))
                 with open(os.path.join(score_save_dir, 'result.txt'), 'a+') as file:
                     file.write('{} {}\n'.format(tile_name, iou))
 
@@ -349,7 +349,7 @@ class UnetModel(network.Network):
                 ax2 = plt.subplot(122, sharex=ax1, sharey=ax1)
                 ax2.imshow(pred)
                 plt.title('pred')
-                plt.suptitle('{} Results on {} IoU={:3f}'.format(self.model_name, file_name_truth.split('_')[0], iou))
+                plt.suptitle('{} Results on {} IoU={:3f}'.format(self.model_name, file_name_truth.split('_')[0], iou[0]/iou[1]))
                 plt.show()
 
         mean_iou = np.mean([x[0]/x[1] for x in iou_record])
