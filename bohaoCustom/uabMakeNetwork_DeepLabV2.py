@@ -59,6 +59,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
                     kwargs['alpha'] = 0.25
                 if 'gamma' not in kwargs:
                     kwargs['gamma'] = 2
+                gt = tf.one_hot(gt, depth=2, dtype=tf.float32)
                 sigmoid_p = tf.nn.sigmoid(prediction)
                 zeros = array_ops.zeros_like(sigmoid_p, dtype=sigmoid_p.dtype)
                 pos_p_sub = array_ops.where(gt >= sigmoid_p, gt - sigmoid_p, zeros)
