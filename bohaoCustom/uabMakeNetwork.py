@@ -20,6 +20,7 @@ class Network(object):
         self.bs = batch_size
         self.class_num = []
         self.loss = []
+        self.loss_iou = []
         self.optimizer = []
         self.pred = []
         self.output = []

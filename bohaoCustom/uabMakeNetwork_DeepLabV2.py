@@ -50,6 +50,14 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
             indices = tf.squeeze(tf.where(tf.less_equal(y_flat, self.class_num - 1)), 1)
             gt = tf.gather(y_flat, indices)
             prediction = tf.gather(pred_flat, indices)
+
+            pred = tf.argmax(prediction, axis=-1, output_type=tf.int32)
+            offset = tf.constant(1e-7)
+            intersect = tf.cast(tf.reduce_sum(gt * pred), tf.float32) + offset
+            union = tf.cast(tf.reduce_sum(gt), tf.float32) + tf.cast(tf.reduce_sum(pred), tf.float32) \
+                    - tf.cast(tf.reduce_sum(gt * pred), tf.float32) + offset
+            self.loss_iou = intersect/union
+
             if loss_type == 'xent':
                 self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
             else:
@@ -73,7 +81,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
               train_reader=None, valid_reader=None,
               image_summary=None, verb_step=100, save_epoch=5,
               img_mean=np.array((0, 0, 0), dtype=np.float32),
-              continue_dir=None):
+              continue_dir=None, valid_iou=False):
         # define summary operations
         valid_cross_entropy_summary_op = tf.summary.scalar('xent_validation', self.valid_cross_entropy)
         valid_image_summary_op = tf.summary.image('Validation_images_summary', self.valid_images,
@@ -107,23 +115,32 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
                           format(epoch, self.global_step_value, step_cross_entropy))
             # validation
             cross_entropy_valid_mean = []
+            if valid_iou:
+                val_loss = self.loss_iou
+            else:
+                val_loss = self.loss
             for step in range(0, n_valid, self.bs):
                 X_batch_val, y_batch_val = valid_reader.readerAction(sess)
-                pred_valid, cross_entropy_valid = sess.run([self.pred, self.loss],
+                pred_valid, cross_entropy_valid = sess.run([self.pred, val_loss],
                                                            feed_dict={self.inputs[x_name]: X_batch_val,
                                                                       self.inputs[y_name]: y_batch_val,
                                                                       self.trainable: False})
                 cross_entropy_valid_mean.append(cross_entropy_valid)
             cross_entropy_valid_mean = np.mean(cross_entropy_valid_mean)
             duration = time.time() - start_time
-            print('Validation cross entropy: {:.3f}, duration: {:.3f}'.format(cross_entropy_valid_mean, duration))
+            if valid_iou:
+                print('Validation IoU: {:.3f}, duration: {:.3f}'.format(cross_entropy_valid_mean,
+                                                                                  duration))
+            else:
+                print('Validation cross entropy: {:.3f}, duration: {:.3f}'.format(cross_entropy_valid_mean,
+                                                                                  duration))
             valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op,
                                                    feed_dict={self.valid_cross_entropy: cross_entropy_valid_mean})
             summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)
             if cross_entropy_valid_mean < cross_entropy_valid_min:
                 cross_entropy_valid_min = cross_entropy_valid_mean
                 saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
-                saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir), global_step=self.global_step)
+                saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir))
 
             if image_summary is not None:
                 pred_valid = sess.run(tf.image.resize_bilinear(pred_valid, self.input_size))
@@ -140,7 +157,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
             tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
-            fineTune=False):
+            fineTune=False, valid_iou=False):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -148,7 +165,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
             coord = tf.train.Coordinator()
             with tf.Session(config=self.config) as sess:
                 # init model
-                init = tf.global_variables_initializer()
+                init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
                 sess.run(init)
                 saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
                 # load model
@@ -168,7 +185,8 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
                     self.train('X', 'Y', self.n_train, sess, train_summary_writer,
                                n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
                                image_summary=util_functions.image_summary, img_mean=img_mean,
-                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir)
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir,
+                               valid_iou=valid_iou)
                 finally:
                     coord.request_stop()
                     coord.join(threads)
@@ -519,7 +537,7 @@ class DeeplabV3(DeeplabV2):
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
             tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
-            fineTune=False):
+            fineTune=False, valid_iou=False):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -527,7 +545,7 @@ class DeeplabV3(DeeplabV2):
             coord = tf.train.Coordinator()
             with tf.Session(config=self.config) as sess:
                 # init model
-                init = tf.global_variables_initializer()
+                init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
                 sess.run(init)
                 saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
                 # load model
@@ -535,10 +553,6 @@ class DeeplabV3(DeeplabV2):
                     if layers2load is not None:
                         self.load_weights(pretrained_model_dir, layers2load)
                     else:
-                        '''restore_var = [v for v in tf.global_variables() if 'resnet_v1' in v.name and
-                                       not 'Adam' in v.name]
-                        loader = tf.train.Saver(var_list=restore_var)
-                        self.load(pretrained_model_dir, sess, loader, epoch=load_epoch_num)'''
                         if not fineTune:
                             restore_var = [v for v in tf.global_variables() if 'resnet_v1' in v.name and
                                        not 'Adam' in v.name]
@@ -552,7 +566,8 @@ class DeeplabV3(DeeplabV2):
                     self.train('X', 'Y', self.n_train, sess, train_summary_writer,
                                n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
                                image_summary=util_functions.image_summary, img_mean=img_mean,
-                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir)
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir,
+                               valid_iou=valid_iou)
                 finally:
                     coord.request_stop()
                     coord.join(threads)

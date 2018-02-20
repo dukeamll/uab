@@ -195,7 +195,7 @@ class FPNRes101(uabMakeNetwork_UNet.UnetModel):
 
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
-            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None):
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None, valid_iou=False):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -203,7 +203,7 @@ class FPNRes101(uabMakeNetwork_UNet.UnetModel):
             coord = tf.train.Coordinator()
             with tf.Session(config=self.config) as sess:
                 # init model
-                init = tf.global_variables_initializer()
+                init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
                 sess.run(init)
                 saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
                 # load model
@@ -221,7 +221,7 @@ class FPNRes101(uabMakeNetwork_UNet.UnetModel):
                     self.train('X', 'Y', self.n_train, sess, train_summary_writer,
                                n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
                                image_summary=util_functions.image_summary, img_mean=img_mean,
-                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir)
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir, valid_iou=valid_iou)
                 finally:
                     coord.request_stop()
                     coord.join(threads)
