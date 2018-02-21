@@ -13,7 +13,7 @@ from bohaoCustom import uabMakeNetwork as network
 
 
 class UnetModel(network.Network):
-    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=0.2,
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
                  batch_size=5, start_filter_num=32):
         network.Network.__init__(self, inputs, trainable, dropout_rate,
@@ -43,21 +43,21 @@ class UnetModel(network.Network):
         sfn = self.sfn
 
         # downsample
-        conv1, pool1 = self.conv_conv_pool(self.inputs[x_name], [sfn, sfn], self.trainable, name='conv1')
-        conv2, pool2 = self.conv_conv_pool(pool1, [sfn*2, sfn*2], self.trainable, name='conv2')
-        conv3, pool3 = self.conv_conv_pool(pool2, [sfn*4, sfn*4], self.trainable, name='conv3')
-        conv4, pool4 = self.conv_conv_pool(pool3, [sfn*8, sfn*8], self.trainable, name='conv4')
-        conv5 = self.conv_conv_pool(pool4, [sfn*16, sfn*16], self.trainable, name='conv5', pool=False)
+        conv1, pool1 = self.conv_conv_pool(self.inputs[x_name], [sfn, sfn], self.trainable, name='conv1', dropout=self.dropout_rate)
+        conv2, pool2 = self.conv_conv_pool(pool1, [sfn*2, sfn*2], self.trainable, name='conv2', dropout=self.dropout_rate)
+        conv3, pool3 = self.conv_conv_pool(pool2, [sfn*4, sfn*4], self.trainable, name='conv3', dropout=self.dropout_rate)
+        conv4, pool4 = self.conv_conv_pool(pool3, [sfn*8, sfn*8], self.trainable, name='conv4', dropout=self.dropout_rate)
+        conv5 = self.conv_conv_pool(pool4, [sfn*16, sfn*16], self.trainable, name='conv5', pool=False, dropout=self.dropout_rate)
 
         # upsample
         up6 = self.upsample_concat(conv5, conv4, name='6')
-        conv6 = self.conv_conv_pool(up6, [sfn*8, sfn*8], self.trainable, name='up6', pool=False)
+        conv6 = self.conv_conv_pool(up6, [sfn*8, sfn*8], self.trainable, name='up6', pool=False, dropout=self.dropout_rate)
         up7 = self.upsample_concat(conv6, conv3, name='7')
-        conv7 = self.conv_conv_pool(up7, [sfn*4, sfn*4], self.trainable, name='up7', pool=False)
+        conv7 = self.conv_conv_pool(up7, [sfn*4, sfn*4], self.trainable, name='up7', pool=False, dropout=self.dropout_rate)
         up8 = self.upsample_concat(conv7, conv2, name='8')
-        conv8 = self.conv_conv_pool(up8, [sfn*2, sfn*2], self.trainable, name='up8', pool=False)
+        conv8 = self.conv_conv_pool(up8, [sfn*2, sfn*2], self.trainable, name='up8', pool=False, dropout=self.dropout_rate)
         up9 = self.upsample_concat(conv8, conv1, name='9')
-        conv9 = self.conv_conv_pool(up9, [sfn, sfn], self.trainable, name='up9', pool=False)
+        conv9 = self.conv_conv_pool(up9, [sfn, sfn], self.trainable, name='up9', pool=False, dropout=self.dropout_rate)
 
         self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
         self.output = tf.nn.softmax(self.pred)
@@ -363,14 +363,7 @@ class UnetModel(network.Network):
 
             # save results
             if save_result:
-                '''if save_result_parent_dir is None:
-                    score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
-                else:
-                    score_save_dir = os.path.join(uabRepoPaths.evalPath, save_result_parent_dir,
-                                                  self.model_name, ds_name)'''
                 pred_save_dir = os.path.join(score_save_dir, 'pred')
-                '''if not os.path.exists(score_save_dir):
-                    os.makedirs(score_save_dir)'''
                 if not os.path.exists(pred_save_dir):
                     os.makedirs(pred_save_dir)
                 imageio.imsave(os.path.join(pred_save_dir, tile_name+'.png'), pred.astype(np.uint8))
@@ -404,7 +397,7 @@ class UnetModel(network.Network):
 
 
 class UnetModelCrop(UnetModel):
-    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=0.2,
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
                  batch_size=5, start_filter_num=32):
         network.Network.__init__(self, inputs, trainable, dropout_rate,
@@ -423,21 +416,30 @@ class UnetModelCrop(UnetModel):
         sfn = self.sfn
 
         # downsample
-        conv1, pool1 = self.conv_conv_pool(self.inputs[x_name], [sfn, sfn], self.trainable, name='conv1', padding='valid')
-        conv2, pool2 = self.conv_conv_pool(pool1, [sfn*2, sfn*2], self.trainable, name='conv2', padding='valid')
-        conv3, pool3 = self.conv_conv_pool(pool2, [sfn*4, sfn*4], self.trainable, name='conv3', padding='valid')
-        conv4, pool4 = self.conv_conv_pool(pool3, [sfn*8, sfn*8], self.trainable, name='conv4', padding='valid')
-        conv5 = self.conv_conv_pool(pool4, [sfn*16, sfn*16], self.trainable, name='conv5', pool=False, padding='valid')
+        conv1, pool1 = self.conv_conv_pool(self.inputs[x_name], [sfn, sfn], self.trainable, name='conv1',
+                                           padding='valid', dropout=self.dropout_rate)
+        conv2, pool2 = self.conv_conv_pool(pool1, [sfn*2, sfn*2], self.trainable, name='conv2',
+                                           padding='valid', dropout=self.dropout_rate)
+        conv3, pool3 = self.conv_conv_pool(pool2, [sfn*4, sfn*4], self.trainable, name='conv3',
+                                           padding='valid', dropout=self.dropout_rate)
+        conv4, pool4 = self.conv_conv_pool(pool3, [sfn*8, sfn*8], self.trainable, name='conv4',
+                                           padding='valid', dropout=self.dropout_rate)
+        conv5 = self.conv_conv_pool(pool4, [sfn*16, sfn*16], self.trainable, name='conv5', pool=False,
+                                    padding='valid', dropout=self.dropout_rate)
 
         # upsample
         up6 = self.crop_upsample_concat(conv5, conv4, 8, name='6')
-        conv6 = self.conv_conv_pool(up6, [sfn*8, sfn*8], self.trainable, name='up6', pool=False, padding='valid')
+        conv6 = self.conv_conv_pool(up6, [sfn*8, sfn*8], self.trainable, name='up6', pool=False,
+                                    padding='valid', dropout=self.dropout_rate)
         up7 = self.crop_upsample_concat(conv6, conv3, 32, name='7')
-        conv7 = self.conv_conv_pool(up7, [sfn*4, sfn*4], self.trainable, name='up7', pool=False, padding='valid')
+        conv7 = self.conv_conv_pool(up7, [sfn*4, sfn*4], self.trainable, name='up7', pool=False,
+                                    padding='valid', dropout=self.dropout_rate)
         up8 = self.crop_upsample_concat(conv7, conv2, 80, name='8')
-        conv8 = self.conv_conv_pool(up8, [sfn*2, sfn*2], self.trainable, name='up8', pool=False, padding='valid')
+        conv8 = self.conv_conv_pool(up8, [sfn*2, sfn*2], self.trainable, name='up8', pool=False,
+                                    padding='valid', dropout=self.dropout_rate)
         up9 = self.crop_upsample_concat(conv8, conv1, 176, name='9')
-        conv9 = self.conv_conv_pool(up9, [sfn, sfn], self.trainable, name='up9', pool=False, padding='valid')
+        conv9 = self.conv_conv_pool(up9, [sfn, sfn], self.trainable, name='up9', pool=False,
+                                    padding='valid', dropout=self.dropout_rate)
 
         self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
         self.output = tf.nn.softmax(self.pred)

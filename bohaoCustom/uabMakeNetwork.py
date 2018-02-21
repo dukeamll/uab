@@ -4,7 +4,7 @@ import tensorflow as tf
 
 
 class Network(object):
-    def __init__(self, inputs, trainable, dropout_rate=0.2,
+    def __init__(self, inputs, trainable, dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
                  batch_size=5):
         self.inputs = inputs
@@ -80,7 +80,7 @@ class Network(object):
 
     def conv_conv_pool(self, input_, n_filters, training, name, kernal_size=(3, 3),
                        pool=True, pool_size=(2, 2), pool_stride=(2, 2),
-                       activation=tf.nn.relu, padding='same', bn=True):
+                       activation=tf.nn.relu, padding='same', bn=True, dropout=None):
         net = input_
 
         with tf.variable_scope('layer{}'.format(name)):
@@ -90,6 +90,9 @@ class Network(object):
                 if bn:
                     net = tf.layers.batch_normalization(net, training=training, name='bn_{}'.format(i+1))
                 net = activation(net, name='relu_{}'.format(name, i + 1))
+                if dropout is not None:
+                    net = tf.layers.dropout(net, rate=self.dropout_rate, training=training,
+                                            name='drop_{}'.format(name, i + 1))
 
             if pool is False:
                 return net
@@ -99,7 +102,7 @@ class Network(object):
 
     def conv_conv_identity_pool_crop(self, input_, n_filters, training, name, kernal_size=(3, 3),
                                      pool=True, pool_size=(2, 2), pool_stride=(2, 2),
-                                     activation=tf.nn.relu, padding='same', bn=True):
+                                     activation=tf.nn.relu, padding='same', bn=True, dropout=None):
         net = input_
         _, w, h, _ = input_.get_shape().as_list()
         with tf.variable_scope('layer{}'.format(name)):
@@ -113,6 +116,9 @@ class Network(object):
                 if bn:
                     net = tf.layers.batch_normalization(net, training=training, name='bn_{}'.format(i+1))
                 net = activation(net, name='relu_{}'.format(name, i + 1))
+                if dropout is not None:
+                    net = tf.layers.dropout(net, rate=self.dropout_rate, training=training,
+                                            name='drop_{}'.format(name, i + 1))
 
             # identity connection
             if padding == 'valid':
