@@ -26,6 +26,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
         self.sfn = start_filter_num
         self.learning_rate = None
         self.valid_cross_entropy = tf.placeholder(tf.float32, [])
+        self.valid_iou = tf.placeholder(tf.float32, [])
         self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
                                                             input_size[1] * 3, 3], name='validation_images')
         self.channel_axis = 3
@@ -84,6 +85,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
               continue_dir=None, valid_iou=False):
         # define summary operations
         valid_cross_entropy_summary_op = tf.summary.scalar('xent_validation', self.valid_cross_entropy)
+        valid_iou_summary_op = tf.summary.scalar('iou_validation', self.valid_iou)
         valid_image_summary_op = tf.summary.image('Validation_images_summary', self.valid_images,
                                                   max_outputs=10)
 
@@ -97,6 +99,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
             start_step = 0
 
         cross_entropy_valid_min = np.inf
+        iou_valid_max = 0
         for epoch in range(start_epoch, self.epochs):
             start_time = time.time()
             for step in range(start_step, n_train, self.bs):
@@ -115,32 +118,40 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
                           format(epoch, self.global_step_value, step_cross_entropy))
             # validation
             cross_entropy_valid_mean = []
-            if valid_iou:
-                val_loss = self.loss_iou
-            else:
-                val_loss = self.loss
+            iou_valid_mean = []
             for step in range(0, n_valid, self.bs):
                 X_batch_val, y_batch_val = valid_reader.readerAction(sess)
-                pred_valid, cross_entropy_valid = sess.run([self.pred, val_loss],
-                                                           feed_dict={self.inputs[x_name]: X_batch_val,
-                                                                      self.inputs[y_name]: y_batch_val,
-                                                                      self.trainable: False})
+                pred_valid, cross_entropy_valid, iou_valid = sess.run([self.pred, self.loss, self.loss_iou],
+                                                                      feed_dict={self.inputs[x_name]: X_batch_val,
+                                                                                 self.inputs[y_name]: y_batch_val,
+                                                                                 self.trainable: False})
                 cross_entropy_valid_mean.append(cross_entropy_valid)
+                iou_valid_mean.append(iou_valid)
             cross_entropy_valid_mean = np.mean(cross_entropy_valid_mean)
+            iou_valid_mean = np.mean(iou_valid_mean)
             duration = time.time() - start_time
             if valid_iou:
-                print('Validation IoU: {:.3f}, duration: {:.3f}'.format(cross_entropy_valid_mean,
-                                                                                  duration))
+                print('Validation IoU: {:.3f}, duration: {:.3f}'.format(iou_valid_mean, duration))
             else:
                 print('Validation cross entropy: {:.3f}, duration: {:.3f}'.format(cross_entropy_valid_mean,
                                                                                   duration))
             valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op,
                                                    feed_dict={self.valid_cross_entropy: cross_entropy_valid_mean})
+            valid_iou_summary = sess.run(valid_iou_summary_op,
+                                         feed_dict={self.valid_iou: iou_valid_mean})
             summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)
-            if cross_entropy_valid_mean < cross_entropy_valid_min:
-                cross_entropy_valid_min = cross_entropy_valid_mean
-                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
-                saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir))
+            summary_writer.add_summary(valid_iou_summary, self.global_step_value)
+            if valid_iou:
+                if iou_valid_mean > iou_valid_max:
+                    iou_valid_max = iou_valid_mean
+                    saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                    saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir))
+
+            else:
+                if cross_entropy_valid_mean < cross_entropy_valid_min:
+                    cross_entropy_valid_min = cross_entropy_valid_mean
+                    saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                    saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir))
 
             if image_summary is not None:
                 pred_valid = sess.run(tf.image.resize_bilinear(pred_valid, self.input_size))
