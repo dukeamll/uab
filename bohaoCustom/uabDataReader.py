@@ -109,13 +109,13 @@ class ImageLabelReader(object):
                             img = np.expand_dims(img, axis=2)
                         nDims += img.shape[2]
                         blockList.append(img)
-                    block = np.dstack(blockList)
+                    block = np.dstack(blockList).astype(np.float32)
 
                     if self.block_mean is not None:
                         block -= self.block_mean
 
                     if dataAug != '':
-                        augDat = uabUtilreader.doDataAug(block, nDims, dataAug)
+                        augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True)
                     else:
                         augDat = block
 
@@ -125,7 +125,7 @@ class ImageLabelReader(object):
                     image_batch[cnt % batch_size, :, :, :] = augDat
 
                     if ((cnt + 1) % batch_size == 0):
-                        yield image_batch[:, :, : 1:], image_batch[:, :, :, :1]
+                        yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1]
         elif self.batch_code == 1:
             # random, batches from same tile
             tile_num, patch_per_tile, tile_name = get_tile_and_patch_num(chipFiles)
@@ -150,8 +150,7 @@ class ImageLabelReader(object):
                                 img = np.expand_dims(img, axis=2)
                             nDims += img.shape[2]
                             blockList.append(img)
-                        block = np.dstack(blockList)
-                        block = block.astype(np.float32)
+                        block = np.dstack(blockList).astype(np.float32)
 
                         if self.block_mean is not None:
                             block -= self.block_mean
@@ -188,8 +187,7 @@ class ImageLabelReader(object):
                             img = np.expand_dims(img, axis=2)
                         nDims += img.shape[2]
                         blockList.append(img)
-                    block = np.dstack(blockList)
-                    block = block.astype(np.float32)
+                    block = np.dstack(blockList).astype(np.float32)
 
                     if self.block_mean is not None:
                         block -= self.block_mean
