@@ -161,8 +161,8 @@ class UnetModel(network.Network):
         tf.summary.scalar('learning rate', self.learning_rate)
         self.summary = tf.summary.merge_all()
 
-    def train_config(self, x_name, y_name, n_train, n_valid, patch_size, ckdir, loss_type='xent'):
-        self.make_loss(y_name, loss_type)
+    def train_config(self, x_name, y_name, n_train, n_valid, patch_size, ckdir, loss_type='xent', **kwargs):
+        self.make_loss(y_name, loss_type, **kwargs)
         self.make_learning_rate(n_train)
         self.make_update_ops(x_name, y_name)
         self.make_optimizer()
