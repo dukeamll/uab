@@ -8,8 +8,8 @@
 temp.py
 *.npy
 
-]task/
-]bad_ideas/
+\]task/
+\]bad_ideas/
 
 # Created by .ignore support plugin (hsz.mobi)
 ### Python template
