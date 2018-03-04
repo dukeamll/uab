@@ -58,14 +58,14 @@ class UGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
         print('input:', x.shape)
         scope_name = 'encoder'
         with tf.variable_scope(scope_name, reuse=reuse) as scope:
-            outputs = conv_conv_shrink(x, [32, 32], self.trainable, name='conv1')
-            outputs = conv_conv_shrink(outputs, [64, 64], self.trainable, name='conv2')
-            outputs = conv_conv_shrink(outputs, [128, 128], self.trainable, name='conv3')
-            outputs = conv_conv_shrink(outputs, [256, 256], self.trainable, name='conv4')
-            outputs = conv_conv_shrink(outputs, [512, 512], self.trainable, name='conv5')
-            outputs = conv_conv_shrink(outputs, [512, 256], self.trainable, name='conv6')
-            outputs = conv_conv_shrink(outputs, [256, 128], self.trainable, name='conv7')
-            representation = conv_conv_shrink(outputs, [128, 100], self.trainable, name='conv8')
+            outputs = conv_conv_shrink(x, [32], self.trainable, name='conv1')
+            outputs = conv_conv_shrink(outputs, [64], self.trainable, name='conv2')
+            outputs = conv_conv_shrink(outputs, [128], self.trainable, name='conv3')
+            outputs = conv_conv_shrink(outputs, [256], self.trainable, name='conv4')
+            outputs = conv_conv_shrink(outputs, [512], self.trainable, name='conv5')
+            outputs = conv_conv_shrink(outputs, [1024], self.trainable, name='conv6')
+            outputs = conv_conv_shrink(outputs, [2048], self.trainable, name='conv7')
+            representation = conv_conv_shrink(outputs, [self.z_dim], self.trainable, name='conv8')
             print("after encoder:", representation.shape)
             outputs = tf.layers.dense(tf.reshape(representation, [-1, self.z_dim]), 1, name='dense_custom')
             return tf.nn.sigmoid(outputs), representation
@@ -265,7 +265,7 @@ def make_thumbnail(imgs, mult, row, col):
     w_s = int(w / mult)
     h_s = int(h / mult)
     thumbnail = np.zeros((w_s*row, h_s*col, 3), dtype=np.uint8)
-    for i in range(n):
+    for i in range(10):
         n_row = int(i // col)
         n_col = int(i % col)
 
