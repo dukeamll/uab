@@ -120,11 +120,10 @@ class UnetModel(network.Network):
             prediction = tf.gather(pred_flat, indices)
 
             pred = tf.argmax(prediction, axis=-1, output_type=tf.int32)
-            offset = tf.constant(1e-7)
-            intersect = tf.cast(tf.reduce_sum(gt * pred), tf.float32) + offset
+            intersect = tf.cast(tf.reduce_sum(gt * pred), tf.float32)
             union = tf.cast(tf.reduce_sum(gt), tf.float32) + tf.cast(tf.reduce_sum(pred), tf.float32) \
-                    - tf.cast(tf.reduce_sum(gt * pred), tf.float32) + offset
-            self.loss_iou = intersect / union
+                    - tf.cast(tf.reduce_sum(gt * pred), tf.float32)
+            self.loss_iou = tf.convert_to_tensor([intersect, union])
 
             if loss_type == 'xent':
                 self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
@@ -212,7 +211,7 @@ class UnetModel(network.Network):
                           format(epoch, self.global_step_value, step_cross_entropy))
             # validation
             cross_entropy_valid_mean = []
-            iou_valid_mean = []
+            iou_valid_mean = np.zeros(2)
             for step in range(0, n_valid, self.bs):
                 X_batch_val, y_batch_val = valid_reader.readerAction(sess)
                 pred_valid, cross_entropy_valid, iou_valid = sess.run([self.pred, self.loss, self.loss_iou],
@@ -220,9 +219,9 @@ class UnetModel(network.Network):
                                                                                  self.inputs[y_name]: y_batch_val,
                                                                                  self.trainable: False})
                 cross_entropy_valid_mean.append(cross_entropy_valid)
-                iou_valid_mean.append(iou_valid)
+                iou_valid_mean += iou_valid
             cross_entropy_valid_mean = np.mean(cross_entropy_valid_mean)
-            iou_valid_mean = np.mean(iou_valid_mean)
+            iou_valid_mean = iou_valid_mean[0] / iou_valid_mean[1]
             duration = time.time() - start_time
             if valid_iou:
                 print('Validation IoU: {:.3f}, duration: {:.3f}'.format(iou_valid_mean, duration))
@@ -467,11 +466,10 @@ class UnetModelCrop(UnetModel):
             prediction = tf.gather(pred_flat, indices)
 
             pred = tf.argmax(prediction, axis=-1, output_type=tf.int32)
-            offset = tf.constant(1e-7)
-            intersect = tf.cast(tf.reduce_sum(gt * pred), tf.float32) + offset
+            intersect = tf.cast(tf.reduce_sum(gt * pred), tf.float32)
             union = tf.cast(tf.reduce_sum(gt), tf.float32) + tf.cast(tf.reduce_sum(pred), tf.float32) \
-                    - tf.cast(tf.reduce_sum(gt * pred), tf.float32) + offset
-            self.loss_iou = intersect / union
+                    - tf.cast(tf.reduce_sum(gt * pred), tf.float32)
+            self.loss_iou = tf.convert_to_tensor([intersect, union])
 
             if loss_type == 'xent':
                 self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
