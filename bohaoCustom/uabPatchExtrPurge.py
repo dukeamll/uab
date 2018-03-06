@@ -3,6 +3,7 @@ import imageio
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
+from shutil import rmtree
 from shutil import copyfile
 import util_functions
 import uabBlockparent
@@ -14,14 +15,14 @@ def compute_missing_percentage(rgb):
     stack = np.sum(rgb, axis=2)
 
     def white_pixel(a):
-        if a == 255*3:
+        if a == 255 * 3:
             return 1
         else:
             return 0
 
     map_func = np.vectorize(white_pixel)
     mpixel_map = map_func(stack)
-    return np.sum(mpixel_map)/(mpixel_map.shape[0] ** 2), 1-mpixel_map
+    return np.sum(mpixel_map) / (mpixel_map.shape[0] ** 2), 1 - mpixel_map
 
 
 class uabPatchExtrPurge(uab_DataHandlerFunctions.uabPatchExtr):
@@ -43,7 +44,7 @@ class uabPatchExtrPurge(uab_DataHandlerFunctions.uabPatchExtr):
     def runAction(self, colObj):
         # function to extract the chips from the tiles
 
-        gridList = self.makeGrid([colObj.tileSize[0]+self.pad, colObj.tileSize[1]+self.pad])
+        gridList = self.makeGrid([colObj.tileSize[0] + self.pad, colObj.tileSize[1] + self.pad])
 
         directory = self.getDirectoryPaths(colObj)
         # extract chips for all the specified extensions
@@ -104,11 +105,11 @@ class uabPatchExtrPurge(uab_DataHandlerFunctions.uabPatchExtr):
 
         # make new dir
         directory_new = uabBlock.getBlockDir(os.path.join(uabBlockparent.outputDirs['patchExt'], colObj.colName,
-                                                          self.algoName()+'Purge'))
+                                                          self.algoName() + 'Purge'))
         if not os.path.exists(directory_new):
             os.makedirs(directory_new)
 
-        files = os.path.join(directory_new, 'fileList.txt')
+        files = os.path.join(directory, 'fileList.txt')
         with open(files, 'r') as f:
             file_list = f.readlines()
         file_list_new = []
@@ -136,3 +137,13 @@ class uabPatchExtrPurge(uab_DataHandlerFunctions.uabPatchExtr):
         with open(files, 'w+') as f:
             for file in file_list_new:
                 f.write(file)
+
+        # remove old directory
+        rmtree(directory)
+
+        files = os.path.join(directory_new, 'state.txt')
+        with open(files, 'w+') as f:
+            f.write('Finished\n')
+
+        # rename directory
+        os.rename(directory_new, directory)
