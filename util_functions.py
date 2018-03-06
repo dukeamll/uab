@@ -10,6 +10,7 @@ some globally utile functions
 import os
 import time
 from sys import platform
+from math import factorial
 import imageio
 import numpy as np
 import tensorflow as tf
