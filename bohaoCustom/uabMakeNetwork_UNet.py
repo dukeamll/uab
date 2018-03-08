@@ -150,9 +150,23 @@ class UnetModel(network.Network):
         tf.add_to_collection('outputs', self.pred)
         self.update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
-    def make_optimizer(self):
+    def make_optimizer(self, train_var_filter):
         with tf.control_dependencies(self.update_ops):
-            self.optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss, global_step=self.global_step)
+            if train_var_filter is None:
+                self.optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss,
+                                                                                     global_step=self.global_step)
+            else:
+                print('Train parameters in scope:')
+                for layer in train_var_filter:
+                    print(layer)
+                train_vars = tf.trainable_variables()
+                var_list = []
+                for var in train_vars:
+                    if var.name.split('/')[0] in train_var_filter:
+                        var_list.append(var)
+                self.optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss,
+                                                                                     global_step=self.global_step,
+                                                                                     var_list=var_list)
 
     def make_summary(self):
         tf.summary.histogram('Predicted Prob', tf.argmax(tf.nn.softmax(self.pred), 1))
@@ -160,11 +174,12 @@ class UnetModel(network.Network):
         tf.summary.scalar('learning rate', self.learning_rate)
         self.summary = tf.summary.merge_all()
 
-    def train_config(self, x_name, y_name, n_train, n_valid, patch_size, ckdir, loss_type='xent', **kwargs):
+    def train_config(self, x_name, y_name, n_train, n_valid, patch_size, ckdir, loss_type='xent', train_var_filter=None,
+                     **kwargs):
         self.make_loss(y_name, loss_type, **kwargs)
         self.make_learning_rate(n_train)
         self.make_update_ops(x_name, y_name)
-        self.make_optimizer()
+        self.make_optimizer(train_var_filter)
         self.make_ckdir(ckdir, patch_size)
         self.make_summary()
         self.config = tf.ConfigProto()
