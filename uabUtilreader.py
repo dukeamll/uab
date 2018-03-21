@@ -92,7 +92,7 @@ def doDataAug(data, dataMeta, augType, is_np=False):
 def crop_image(block, size, corner):
     return block[corner[0]:corner[0]+size[0],corner[1]:corner[1]+size[1],:]
 
-def patchify(block, tile_dim, patch_size, overlap=0):
+def patchify(block, tile_dim, patch_size, overlap=0, insert_dim=False):
     max_h = tile_dim[0] - patch_size[0]
     max_w = tile_dim[1] - patch_size[1]
     if max_h > 0 and max_w > 0:
@@ -105,7 +105,10 @@ def patchify(block, tile_dim, patch_size, overlap=0):
     patch_grid_w = np.floor(np.linspace(0, max_w, w_step)).astype(np.int32)
     for corner_h in patch_grid_h:
         for corner_w in patch_grid_w:
-            yield crop_image(block, patch_size, (corner_h, corner_w))
+            if insert_dim:
+                yield np.expand_dims(crop_image(block, patch_size, (corner_h, corner_w)), axis=0)
+            else:
+                yield crop_image(block, patch_size, (corner_h, corner_w))
 
 def pad_block(block, pad):
     padded_block = []

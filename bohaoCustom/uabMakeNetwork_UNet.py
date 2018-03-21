@@ -450,11 +450,11 @@ class UnetModelCrop(UnetModel):
                                            padding='valid', dropout=self.dropout_rate)
         conv4, pool4 = self.conv_conv_pool(pool3, [sfn*8, sfn*8], self.trainable, name='conv4',
                                            padding='valid', dropout=self.dropout_rate)
-        conv5 = self.conv_conv_pool(pool4, [sfn*16, sfn*16], self.trainable, name='conv5', pool=False,
+        self.encoding = self.conv_conv_pool(pool4, [sfn*16, sfn*16], self.trainable, name='conv5', pool=False,
                                     padding='valid', dropout=self.dropout_rate)
 
         # upsample
-        up6 = self.crop_upsample_concat(conv5, conv4, 8, name='6')
+        up6 = self.crop_upsample_concat(self.encoding, conv4, 8, name='6')
         conv6 = self.conv_conv_pool(up6, [sfn*8, sfn*8], self.trainable, name='up6', pool=False,
                                     padding='valid', dropout=self.dropout_rate)
         up7 = self.crop_upsample_concat(conv6, conv3, 32, name='7')
@@ -495,15 +495,19 @@ class UnetModelCrop(UnetModel):
                     kwargs['alpha'] = 0.25
                 if 'gamma' not in kwargs:
                     kwargs['gamma'] = 2
-                gt = tf.one_hot(gt, depth=2, dtype=tf.float32)
+                '''gt = tf.one_hot(gt, depth=2, dtype=tf.float32)
                 sigmoid_p = tf.nn.sigmoid(prediction)
                 zeros = array_ops.zeros_like(sigmoid_p, dtype=sigmoid_p.dtype)
-                pos_p_sub = array_ops.where(gt >= sigmoid_p, gt - sigmoid_p, zeros)
+                pos_p_sub = array_ops.where(gt > sigmoid_p, gt - sigmoid_p, zeros)
                 neg_p_sub = array_ops.where(gt > zeros, zeros, sigmoid_p)
                 per_entry_cross_ent = - kwargs['alpha'] * (pos_p_sub ** kwargs['gamma']) * tf.log(tf.clip_by_value(
                     sigmoid_p, 1e-8, 1.0)) - (1- kwargs['alpha']) * (neg_p_sub ** kwargs['gamma']) * tf.log(
-                    tf.clip_by_value(1.0 - sigmoid_p, 1e-8, 1.0))
-                self.loss = tf.reduce_sum(per_entry_cross_ent)
+                    tf.clip_by_value(1.0 - sigmoid_p, 1e-8, 1.0))'''
+                p_t = tf.nn.sigmoid(prediction)
+                ones = array_ops.zeros_like(p_t, dtype=p_t.dtype)
+                p_t = array_ops.where(gt == ones, p_t, ones-p_t)
+                per_entry_cross_ent = - kwargs['alpha'] * (1-p_t)**kwargs['alpha'] * tf.log(p_t)
+                self.loss = tf.reduce_mean(per_entry_cross_ent)
 
     def load_weights_append_first_layer(self, ckpt_dir, layers2load, conv1_weight, check_weight=False):
         # this functino load weights from pretrained model and add extra filters to first layer
