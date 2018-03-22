@@ -291,7 +291,7 @@ class ImageLabelReader_City(object):
                 image_batch[cnt % batch_size, :, :, :] = augDat
 
                 if ((cnt + 1) % batch_size == 0):
-                    yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1]
+                    yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1], cityid_batch
 
 
 # for debugging purposes
@@ -331,8 +331,9 @@ if __name__ == '__main__':
                                              5, dataAug='flip,rotate', block_mean=np.append([0], img_mean),
                                              city_dict=city_dict)
 
-    for plt_cnt in range(1):
-        x, y = dataReader_train.readerAction()
+    for plt_cnt in range(10):
+        x, y, city_id = dataReader_train.readerAction()
+        print(city_id)
         import matplotlib.pyplot as plt
         for i in range(5):
             plt.subplot(5, 2, i*2+1)
