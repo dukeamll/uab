@@ -504,9 +504,11 @@ class UnetModelCrop(UnetModel):
                     sigmoid_p, 1e-8, 1.0)) - (1- kwargs['alpha']) * (neg_p_sub ** kwargs['gamma']) * tf.log(
                     tf.clip_by_value(1.0 - sigmoid_p, 1e-8, 1.0))'''
                 p_t = tf.nn.sigmoid(prediction)
-                ones = array_ops.zeros_like(p_t, dtype=p_t.dtype)
-                p_t = array_ops.where(gt == ones, p_t, ones-p_t)
-                per_entry_cross_ent = - kwargs['alpha'] * (1-p_t)**kwargs['alpha'] * tf.log(p_t)
+                zeros = array_ops.zeros_like(p_t, dtype=p_t.dtype)
+                p_t = array_ops.where(gt > zeros, p_t, 1-p_t)
+                # clip is necessary otherwise log(0) will generate nan
+                per_entry_cross_ent = - kwargs['alpha'] * (1-p_t)**kwargs['alpha'] * tf.log(tf.clip_by_value(
+                    p_t, 1e-8, 1.0))
                 self.loss = tf.reduce_mean(per_entry_cross_ent)
 
     def load_weights_append_first_layer(self, ckpt_dir, layers2load, conv1_weight, check_weight=False):

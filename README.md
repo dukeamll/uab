@@ -14,6 +14,7 @@
 - [ ] uabDataReader: none queue iterator GT order
 - [ ] uabDataReader: none queue iterator data aug
 - [X] Keep track of best model during training
+- [ ] Optimize model.evaluate()
 
 # Known Bugs
 - [X] Loading a model to fine tune will cause problem by calling run() with pretrained_model_dir set in bohaoCustom/uabMakeNetwork_Unet.py
