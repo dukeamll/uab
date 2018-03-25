@@ -1,13 +1,17 @@
+import os
+import time
+import numpy as np
 import tensorflow as tf
+from bohaoCustom import uabMakeNetwork as network
 from bohaoCustom import uabMakeNetwork_UNet
 
 
 class UnetEncoder(uabMakeNetwork_UNet.UnetModelCrop):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
-                 batch_size=5, start_filter_num=32):
-        uabMakeNetwork_UNet.UnetModelCrop.__init__(self, inputs, trainable, dropout_rate,
-                                                   learn_rate, decay_step, decay_rate, epochs, batch_size)
+                 batch_size=5, start_filter_num=32, latent_num=500):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
         self.name = 'UnetEncoder'
         self.model_name = self.get_unique_name(model_name)
         self.sfn = start_filter_num
@@ -17,6 +21,7 @@ class UnetEncoder(uabMakeNetwork_UNet.UnetModelCrop):
         self.config = None
         self.n_train = 0
         self.n_valid = 0
+        self.latent_num = latent_num
 
     def create_graph(self, x_name, class_num, start_filter_num=32):
         self.class_num = class_num
@@ -39,26 +44,126 @@ class UnetEncoder(uabMakeNetwork_UNet.UnetModelCrop):
                                            padding='valid', dropout=self.dropout_rate)  # 12*12*256
         conv7, pool7 = self.conv_conv_pool(pool6, [sfn*4, sfn*4], self.trainable, name='encode7',
                                            padding='valid', dropout=self.dropout_rate)  # 4*4*128
-        pool7_flat = tf.reshape(conv7, [-1, 1])
+        pool7_flat = tf.reshape(pool7, [-1, 2048])
+        self.encoding = self.fc_fc(pool7_flat, [1000, self.latent_num], self.trainable, 'encode_final',
+                                   activation=tf.nn.relu, dropout=False)
 
-        self.pred = self.fc_fc(pool7_flat, [2048, 1000], self.trainable, 'encode_final', activation=None, dropout=False)
-        self.output = tf.nn.sigmoid(self.pred)
+        self.pred = self.fc_fc(self.encoding, [100, self.class_num], self.trainable, 'encode_pred',
+                               activation=None, dropout=False)
+        self.output = tf.nn.softmax(self.pred)
 
     def make_loss(self, y_name, loss_type='xent', **kwargs):
         with tf.variable_scope('loss'):
-            pred_flat = tf.reshape(self.pred, [-1, self.class_num])
-            _, w, h, _ = self.inputs[y_name].get_shape().as_list()
-            y = tf.image.resize_image_with_crop_or_pad(self.inputs[y_name], w-self.get_overlap(), h-self.get_overlap())
-            y_flat = tf.reshape(tf.squeeze(y, axis=[3]), [-1, ])
-            indices = tf.squeeze(tf.where(tf.less_equal(y_flat, self.class_num - 1)), 1)
-            gt = tf.gather(y_flat, indices)
-            prediction = tf.gather(pred_flat, indices)
-
-            pred = tf.argmax(prediction, axis=-1, output_type=tf.int32)
-            intersect = tf.cast(tf.reduce_sum(gt * pred), tf.float32)
-            union = tf.cast(tf.reduce_sum(gt), tf.float32) + tf.cast(tf.reduce_sum(pred), tf.float32) \
-                    - tf.cast(tf.reduce_sum(gt * pred), tf.float32)
-            self.loss_iou = tf.convert_to_tensor([intersect, union])
+            #pred = tf.reshape(self.pred, [-1, self.class_num])
+            pred = self.pred
+            #gt = tf.one_hot(self.inputs[y_name], depth=self.class_num)
+            gt = self.inputs[y_name]
 
             if loss_type == 'xent':
-                self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
+                self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=pred, labels=gt))
+
+    def train(self, x_name, y_name, n_train, sess, summary_writer, n_valid=1000,
+              train_reader=None, valid_reader=None,
+              image_summary=None, verb_step=100, save_epoch=5,
+              img_mean=np.array((0, 0, 0), dtype=np.float32),
+              continue_dir=None, valid_iou=False):
+        # define summary operations
+        valid_cross_entropy_summary_op = tf.summary.scalar('xent_validation', self.valid_cross_entropy)
+
+        if continue_dir is not None and os.path.exists(continue_dir):
+            self.load_weights(continue_dir, [1, 2, 3, 4, 5])
+            gs = sess.run(self.global_step)
+            start_epoch = int(np.ceil(gs/n_train*self.bs))
+            start_step = gs - int(start_epoch*n_train/self.bs)
+        else:
+            start_epoch = 0
+            start_step = 0
+
+        cross_entropy_valid_min = np.inf
+        for epoch in range(start_epoch, self.epochs):
+            start_time = time.time()
+            for step in range(start_step, n_train, self.bs):
+                X_batch, _, y_batch = train_reader.readerAction(sess)
+                _, self.global_step_value = sess.run([self.optimizer, self.global_step],
+                                                     feed_dict={self.inputs[x_name]:X_batch,
+                                                                self.inputs[y_name]:y_batch,
+                                                                self.trainable: True})
+                if self.global_step_value % verb_step == 0:
+                    pred_train, step_cross_entropy, step_summary = sess.run([self.pred, self.loss, self.summary],
+                                                                            feed_dict={self.inputs[x_name]: X_batch,
+                                                                                       self.inputs[y_name]: y_batch,
+                                                                                       self.trainable: False})
+                    summary_writer.add_summary(step_summary, self.global_step_value)
+                    print('Epoch {:d} step {:d}\tcross entropy = {:.3f}'.
+                          format(epoch, self.global_step_value, step_cross_entropy))
+            # validation
+            cross_entropy_valid_mean = []
+            for step in range(0, n_valid, self.bs):
+                X_batch_val, _, y_batch_val = valid_reader.readerAction(sess)
+                pred_valid, cross_entropy_valid, iou_valid = sess.run([self.pred, self.loss, self.loss_iou],
+                                                                      feed_dict={self.inputs[x_name]: X_batch_val,
+                                                                                 self.inputs[y_name]: y_batch_val,
+                                                                                 self.trainable: False})
+                cross_entropy_valid_mean.append(cross_entropy_valid)
+            cross_entropy_valid_mean = np.mean(cross_entropy_valid_mean)
+            duration = time.time() - start_time
+            print('Validation cross entropy: {:.3f}, duration: {:.3f}'.format(cross_entropy_valid_mean,
+                                                                                  duration))
+            valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op,
+                                                   feed_dict={self.valid_cross_entropy: cross_entropy_valid_mean})
+            summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)
+            if cross_entropy_valid_mean < cross_entropy_valid_min:
+                cross_entropy_valid_min = cross_entropy_valid_mean
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir))
+
+            if epoch % save_epoch == 0:
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                saver.save(sess, '{}/model_{}.ckpt'.format(self.ckdir, epoch), global_step=self.global_step)
+
+    def test(self, x_name, sess, test_iterator):
+        result = []
+        for X_batch in test_iterator:
+            pred = sess.run(self.output, feed_dict={self.inputs[x_name]: X_batch,
+                                                    self.trainable: False})
+            result.append(pred)
+        result = np.vstack(result)
+        return result
+
+    def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
+            isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
+            valid_iou=False):
+        if gpu is not None:
+            os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+        if isTrain:
+            coord = tf.train.Coordinator()
+            with tf.Session(config=self.config) as sess:
+                # init model
+                init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
+                sess.run(init)
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                # load model
+                if pretrained_model_dir is not None:
+                    self.load_weights(pretrained_model_dir, [1, 2, 3, 4, 5])
+                threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+                try:
+                    train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
+                    self.train('X', 'Y', self.n_train, sess, train_summary_writer,
+                               n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
+                               image_summary=None, img_mean=img_mean,
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir,
+                               valid_iou=valid_iou)
+                finally:
+                    coord.request_stop()
+                    coord.join(threads)
+                    saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)
+        else:
+            with tf.Session() as sess:
+                init = tf.global_variables_initializer()
+                sess.run(init)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num)
+                self.model_name = pretrained_model_dir.split('/')[-1]
+                result = self.test('X', sess, test_reader)
+            return result

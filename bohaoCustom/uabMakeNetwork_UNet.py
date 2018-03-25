@@ -495,24 +495,25 @@ class UnetModelCrop(UnetModel):
                     kwargs['alpha'] = 0.25
                 if 'gamma' not in kwargs:
                     kwargs['gamma'] = 2
-                '''gt = tf.one_hot(gt, depth=2, dtype=tf.float32)
+                gt = tf.one_hot(gt, depth=2, dtype=tf.float32)
                 sigmoid_p = tf.nn.sigmoid(prediction)
                 zeros = array_ops.zeros_like(sigmoid_p, dtype=sigmoid_p.dtype)
                 pos_p_sub = array_ops.where(gt > sigmoid_p, gt - sigmoid_p, zeros)
                 neg_p_sub = array_ops.where(gt > zeros, zeros, sigmoid_p)
                 per_entry_cross_ent = - kwargs['alpha'] * (pos_p_sub ** kwargs['gamma']) * tf.log(tf.clip_by_value(
                     sigmoid_p, 1e-8, 1.0)) - (1- kwargs['alpha']) * (neg_p_sub ** kwargs['gamma']) * tf.log(
-                    tf.clip_by_value(1.0 - sigmoid_p, 1e-8, 1.0))'''
+                    tf.clip_by_value(1.0 - sigmoid_p, 1e-8, 1.0))
+                '''gt = tf.one_hot(gt, depth=2, dtype=tf.float32)
                 p_t = tf.nn.sigmoid(prediction)
                 zeros = array_ops.zeros_like(gt, dtype=gt.dtype)
                 ones = array_ops.ones_like(p_t, dtype=p_t.dtype)
                 p_t = array_ops.where(gt == zeros, ones-p_t, p_t)
-                alpha = array_ops.where(gt == zeros, 1-kwargs['alpha']*array_ops.ones_like(p_t, dtype=p_t.dtype),
+                alpha = array_ops.where(gt == zeros, (1-kwargs['alpha'])*array_ops.ones_like(p_t, dtype=p_t.dtype),
                                         kwargs['alpha'] * array_ops.ones_like(p_t, dtype=p_t.dtype))
                 # clip is necessary otherwise log(0) will generate nan
                 per_entry_cross_ent = - alpha * (1-p_t)**kwargs['gamma'] * tf.log(tf.clip_by_value(
-                    p_t, 1e-8, 1.0))
-                self.loss = tf.reduce_mean(per_entry_cross_ent)
+                    p_t, 1e-8, 1.0))'''
+                self.loss = tf.reduce_sum(per_entry_cross_ent)
 
     def load_weights_append_first_layer(self, ckpt_dir, layers2load, conv1_weight, check_weight=False):
         # this functino load weights from pretrained model and add extra filters to first layer

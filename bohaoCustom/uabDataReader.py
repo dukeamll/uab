@@ -211,6 +211,7 @@ class ImageLabelReader_City(object):
                  padding=np.array((0, 0)), block_mean=None, dataAug=''):
         self.chip_size = chip_size
         self.block_mean = block_mean
+        self.city_dict = city_dict
 
         # chipFiles:
         # list of lists.  Each inner list is a list of the chips by their extension.
@@ -262,13 +263,13 @@ class ImageLabelReader_City(object):
         nDims = len(chipFiles[0])
         while True:
             image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
-            cityid_batch = np.zeros(batch_size)
+            cityid_batch = np.zeros(batch_size, dtype=np.uint8)
             for cnt, randInd in enumerate(idx):
                 row = chipFiles[randInd]
                 blockList = []
                 nDims = 0
                 city_name = ''.join([a for a in row[0].split('_')[0] if not a.isdigit()])
-                cityid_batch[cnt%batch_size] = city_dict[city_name]
+                cityid_batch[cnt%batch_size] = self.city_dict[city_name]
                 for file in row:
                     img = util_functions.uabUtilAllTypeLoad(os.path.join(image_dir, file))
                     if len(img.shape) == 2:
