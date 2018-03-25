@@ -278,3 +278,21 @@ class runtime_decorator(object):
     def __call__(self, *args, **kwargs):
         duration = time.time() - self.start_time
         print('duration {:.2f} hours'.format(duration / 60 / 60))
+
+##-------------------------
+# for post proc
+def get_capacity(where='http://www.ctsolarscoreboard.com/static/data/RawData/Compiled_Scorecard.csv'):
+    df = pd.read_csv(where,usecols={'Municipality','Profile_Muni_ResSolarCapacity_Total'},header=0,engine='python')
+    df.columns = ['Town', 'TotResSolarCap_t']
+    df.TotResSolarCap_t=[float(c.replace(',','')) for c in df.TotResSolarCap_t]
+    df = df.sort_values(by=['TotResSolarCap_t'],ascending=False).reset_index(drop=True)
+    return df
+
+from IPython.display import display_html
+def display_side_by_side(*args):
+    html_str=''
+    for df in args:
+        html_str+=df.to_html()
+    display_html(html_str.replace('table','table style="display:inline"'),raw=True)
+
+##-------------------------
