@@ -8,7 +8,7 @@ Created on Wed Nov 22 10:18:31 2017
 Useful functions for data readers.  Particularly, holds the functions for augmentation which should be accessed through doDataAug()
 """
 
-
+import scipy.stats as stats
 import tensorflow as tf
 import numpy as np
 
@@ -72,6 +72,16 @@ def image_flipping_np(img):
     return img
 
 
+def image_adjust_gamma_np(img):
+    lower, upper = 0, 3
+    mu, sigma = 1, 0.5
+    X = stats.truncnorm(
+        (lower - mu) / sigma, (upper - mu) / sigma, loc=mu, scale=sigma)
+    inv_gamma = 1/X.rvs(1)
+    img[:, :, :3] = (img[:, :, :3]/255.0 ** inv_gamma * 255.0).astype(np.uint8)
+    return img
+
+
 def doDataAug(data, dataMeta, augType, is_np=False):
     #function to call that actually performs the augmentations
     #dataMeta is a list of info (e.g. label, number of channels)
@@ -81,6 +91,8 @@ def doDataAug(data, dataMeta, augType, is_np=False):
             data = image_flipping_np(data)
         if 'rotate' in augType:
             data = image_rotating_np(data)
+        if 'gamma' in augType:
+            data = image_adjust_gamma_np(data)
     else:
         if 'flip' in augType:
             data = image_flipping(data, dataMeta)
@@ -154,3 +166,16 @@ def un_patchify_shrink(blocks, tile_dim, tile_dim_output, patch_size, patch_size
             cnt += 1
             image[corner_h:corner_h + patch_size_output[0], corner_w:corner_w + patch_size_output[1], :] += blocks[cnt - 1, :, :, :]
     return image
+
+
+if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+    import scipy.stats as stats
+
+    lower, upper = 0, 3
+    mu, sigma = 1, 0.5
+    X = stats.truncnorm(
+        (lower - mu) / sigma, (upper - mu) / sigma, loc=mu, scale=sigma)
+
+    plt.hist(X.rvs(10000), 100)
+    plt.show()
