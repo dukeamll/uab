@@ -74,7 +74,7 @@ def image_flipping_np(img):
 
 def image_adjust_gamma_np(img, img_mean):
     img_mean = img_mean[1:]
-    gamma = np.random.uniform(0.85, 1.05)
+    gamma = np.random.uniform(0.5, 1.05)
     inv_gamma = 1/gamma
     img[:, :, 1:] = ((img[:, :, 1:]+img_mean)/255.0 ** inv_gamma * 255.0)-img_mean
     return img

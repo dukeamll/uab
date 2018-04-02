@@ -121,7 +121,7 @@ class ImageLabelReader(object):
                     block -= self.block_mean
 
                 if dataAug != '':
-                    augDat = uabUtilreader.doDataAug(block, nDims, dataAug)
+                    augDat = uabUtilreader.doDataAug(block, nDims, dataAug, img_mean=self.block_mean)
                 else:
                     augDat = block
             
@@ -199,7 +199,7 @@ class ImageLabelReader(object):
             queueOutput -= self.block_mean
             
         if len(dataAug) > 0:
-            augDat = uabUtilreader.doDataAug(queueOutput, totChannels, dataAug)
+            augDat = uabUtilreader.doDataAug(queueOutput, totChannels, dataAug, img_mean=self.block_mean)
             augDat = tf.image.resize_images(augDat, self.chip_size)
         else:
             augDat = queueOutput
