@@ -57,6 +57,7 @@ class FRRN(uabMakeNetwork_UNet.UnetModel):
         self.sfn = start_filter_num
         self.learning_rate = None
         self.valid_cross_entropy = tf.placeholder(tf.float32, [])
+        self.valid_iou = tf.placeholder(tf.float32, [])
         self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
                                                             input_size[1] * 3, 3], name='validation_images')
         self.update_ops = None

@@ -115,7 +115,7 @@ class ImageLabelReader(object):
                         block -= self.block_mean
 
                     if dataAug != '':
-                        augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True)
+                        augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True, img_mean=self.block_mean)
                     else:
                         augDat = block
 
@@ -156,7 +156,7 @@ class ImageLabelReader(object):
                             block -= self.block_mean
 
                         if dataAug != '':
-                            augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True)
+                            augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True, img_mean=self.block_mean)
                         else:
                             augDat = block
 
@@ -193,7 +193,7 @@ class ImageLabelReader(object):
                         block -= self.block_mean
 
                     if dataAug != '':
-                        augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True)
+                        augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True, img_mean=self.block_mean)
                     else:
                         augDat = block
 
@@ -308,6 +308,7 @@ if __name__ == '__main__':
     # the original file is in /ei-edl01/data/uab_datasets/inria
     blCol = uab_collectionFunctions.uabCollection('inria')
     img_mean = blCol.getChannelMeans([0, 1, 2])
+    print(img_mean)
 
     # extract patches
     extrObj = uab_DataHandlerFunctions.uabPatchExtr([0, 1, 2, 4],  # extract all 4 channels
@@ -328,17 +329,15 @@ if __name__ == '__main__':
     file_list_train = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(6, 37)])
     file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(0, 6)])
 
-    dataReader_train = ImageLabelReader_City([3], [0, 1, 2], patchDir, file_list_train, (572, 572),
-                                             5, dataAug='flip,rotate', block_mean=np.append([0], img_mean),
-                                             city_dict=city_dict)
+    dataReader_train = ImageLabelReader([3], [0, 1, 2], patchDir, file_list_train, (572, 572),
+                                             5, dataAug='gamma', block_mean=np.append([0], img_mean))
 
     for plt_cnt in range(10):
-        x, y, city_id = dataReader_train.readerAction()
-        print(city_id)
+        x, y = dataReader_train.readerAction()
         import matplotlib.pyplot as plt
         for i in range(5):
             plt.subplot(5, 2, i*2+1)
-            plt.imshow(x[i, :, :, :]+img_mean)
+            plt.imshow((x[i, :, :, :]+img_mean).astype(np.uint8))
             plt.subplot(5, 2, i*2+1+1)
             plt.imshow(y[i, :, :, 0])
         plt.show()

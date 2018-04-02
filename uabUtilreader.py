@@ -72,17 +72,15 @@ def image_flipping_np(img):
     return img
 
 
-def image_adjust_gamma_np(img):
-    lower, upper = 0, 3
-    mu, sigma = 1, 0.5
-    X = stats.truncnorm(
-        (lower - mu) / sigma, (upper - mu) / sigma, loc=mu, scale=sigma)
-    inv_gamma = 1/X.rvs(1)
-    img[:, :, :3] = (img[:, :, :3]/255.0 ** inv_gamma * 255.0).astype(np.uint8)
+def image_adjust_gamma_np(img, img_mean):
+    img_mean = img_mean[1:]
+    gamma = np.random.uniform(0.85, 1.05)
+    inv_gamma = 1/gamma
+    img[:, :, 1:] = ((img[:, :, 1:]+img_mean)/255.0 ** inv_gamma * 255.0)-img_mean
     return img
 
 
-def doDataAug(data, dataMeta, augType, is_np=False):
+def doDataAug(data, dataMeta, augType, img_mean, is_np=False):
     #function to call that actually performs the augmentations
     #dataMeta is a list of info (e.g. label, number of channels)
 
@@ -92,7 +90,7 @@ def doDataAug(data, dataMeta, augType, is_np=False):
         if 'rotate' in augType:
             data = image_rotating_np(data)
         if 'gamma' in augType:
-            data = image_adjust_gamma_np(data)
+            data = image_adjust_gamma_np(data, img_mean)
     else:
         if 'flip' in augType:
             data = image_flipping(data, dataMeta)
