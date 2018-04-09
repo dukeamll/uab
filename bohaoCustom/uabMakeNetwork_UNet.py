@@ -406,7 +406,8 @@ class UnetModel(network.Network):
                 plt.suptitle('{} Results on {} IoU={:3f}'.format(self.model_name, file_name_truth.split('_')[0], iou[0]/iou[1]))
                 plt.show()
 
-        mean_iou = np.mean([x[0]/x[1] for x in iou_record])
+        iou_record = np.array(iou_record)
+        mean_iou = np.sum(iou_record[:, 0]) / np.sum(iou_record[:, 1])
         print('Overall mean IoU={:.3f}'.format(mean_iou))
         if save_result:
             if save_result_parent_dir is None:
