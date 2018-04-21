@@ -290,7 +290,7 @@ class UnetModel(network.Network):
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
             tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
-            valid_iou=False):
+            valid_iou=False, best_model=True):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -323,7 +323,7 @@ class UnetModel(network.Network):
             with tf.Session() as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
-                self.load(pretrained_model_dir, sess, epoch=load_epoch_num)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
                 self.model_name = pretrained_model_dir.split('/')[-1]
                 result = self.test('X', sess, test_reader)
             image_pred = uabUtilreader.un_patchify(result, tile_size, patch_size)
@@ -331,7 +331,7 @@ class UnetModel(network.Network):
 
     def evaluate(self, rgb_list, gt_list, rgb_dir, gt_dir, input_size, tile_size, batch_size, img_mean,
                  model_dir, gpu=None, save_result=True, save_result_parent_dir=None, show_figure=False,
-                 verb=True, ds_name='default', load_epoch_num=None):
+                 verb=True, ds_name='default', load_epoch_num=None, best_model=True):
         if show_figure:
             import matplotlib.pyplot as plt
 
@@ -375,7 +375,7 @@ class UnetModel(network.Network):
                             test_reader=rManager,
                             tile_size=tile_size,
                             patch_size=input_size,
-                            gpu=gpu, load_epoch_num=load_epoch_num)
+                            gpu=gpu, load_epoch_num=load_epoch_num, best_model=best_model)
 
             truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
             iou = util_functions.iou_metric(truth_label_img, pred, divide_flag=True)
@@ -562,7 +562,7 @@ class UnetModelCrop(UnetModel):
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
             tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
-            valid_iou=False):
+            valid_iou=False, best_model=True):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -595,7 +595,7 @@ class UnetModelCrop(UnetModel):
             with tf.Session() as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
-                self.load(pretrained_model_dir, sess, epoch=load_epoch_num)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
                 self.model_name = pretrained_model_dir.split('/')[-1]
                 result = self.test('X', sess, test_reader)
             image_pred = uabUtilreader.un_patchify_shrink(result,

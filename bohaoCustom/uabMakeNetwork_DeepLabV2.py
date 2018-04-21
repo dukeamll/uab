@@ -167,7 +167,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
             tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
-            fineTune=False, valid_iou=False):
+            fineTune=False, valid_iou=False, best_model=True):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -205,7 +205,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
             with tf.Session() as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
-                self.load(pretrained_model_dir, sess, epoch=load_epoch_num)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
                 self.model_name = pretrained_model_dir.split('/')[-1]
                 result = self.test('X', sess, test_reader)
             image_pred = uabUtilreader.un_patchify(result, tile_size, patch_size)
@@ -548,7 +548,7 @@ class DeeplabV3(DeeplabV2):
     def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
             isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
             tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
-            fineTune=False, valid_iou=False):
+            fineTune=False, valid_iou=False, best_model=True):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -587,7 +587,7 @@ class DeeplabV3(DeeplabV2):
             with tf.Session() as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
-                self.load(pretrained_model_dir, sess, epoch=load_epoch_num)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
                 self.model_name = pretrained_model_dir.split('/')[-1]
                 result = self.test('X', sess, test_reader)
             image_pred = uabUtilreader.un_patchify(result, tile_size, patch_size)

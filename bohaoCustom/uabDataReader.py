@@ -312,25 +312,26 @@ if __name__ == '__main__':
 
     # extract patches
     extrObj = uab_DataHandlerFunctions.uabPatchExtr([0, 1, 2, 4],  # extract all 4 channels
-                                                    cSize=(572, 572),  # patch size as 572*572
-                                                    numPixOverlap=int(184 / 2),  # overlap as 92
+                                                    cSize=(321, 321),  # patch size as 572*572
+                                                    numPixOverlap=0,  # overlap as 92
                                                     extSave=['jpg', 'jpg', 'jpg', 'png'],
                                                     # save rgb files as jpg and gt as png
                                                     isTrain=True,
                                                     gtInd=3,
-                                                    pad=184)  # pad around the tiles
+                                                    pad=0)  # pad around the tiles
     patchDir = extrObj.run(blCol)
 
     # make data reader
     chipFiles = os.path.join(patchDir, 'fileList.txt')
     # use uabCrossValMaker to get fileLists for training and validation
-    idx, file_list = uabCrossValMaker.uabUtilGetFolds(patchDir, 'fileList.txt', 'force_tile')
+    idx, file_list = uabCrossValMaker.uabUtilGetFolds(r'/media/ei-edl01/user/bh163/tasks/2018.03.02.res_gan',
+                                                      'deeplab_inria_cp_0.txt', 'force_tile')
     # use first 5 tiles for validation
     file_list_train = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(6, 37)])
     file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(0, 6)])
 
-    dataReader_train = ImageLabelReader([3], [0, 1, 2], patchDir, file_list_train, (572, 572),
-                                             5, dataAug='gamma', block_mean=np.append([0], img_mean))
+    dataReader_train = ImageLabelReader([3], [0, 1, 2], patchDir, file_list, (321, 321),
+                                             5, block_mean=np.append([0], img_mean))
 
     for plt_cnt in range(10):
         x, y = dataReader_train.readerAction()

@@ -39,7 +39,7 @@ class Network(object):
             format(self.model_name, patch_size, self.bs, self.epochs, self.lr, self.ds, self.dr)
         self.ckdir = os.path.join(ckdir, dir_name)
 
-    def load(self, model_path, sess, saver=None, epoch=None):
+    def load(self, model_path, sess, saver=None, epoch=None, best_model=True):
         # this can only be called after create_graph()
         # loads all weights in a graph
         if saver is None:
@@ -47,7 +47,7 @@ class Network(object):
         if os.path.exists(model_path) and tf.train.get_checkpoint_state(model_path):
             if epoch is None:
                 best_model_path = glob(os.path.join(model_path, 'best_model.ckpt*.index'))
-                if len(best_model_path) > 0:
+                if len(best_model_path) > 0 and best_model:
                     best_model_name = best_model_path[0][:-6]
                     saver.restore(sess, best_model_name)
                     print('loaded {}'.format(best_model_name))
