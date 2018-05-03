@@ -21,3 +21,4 @@
 - [X] Unnecessary patches are extracted when input size equals tile size at testing
 - [X] Redundant reader initialization in model.evaluate()
 - [X] Continue training has some errors in loading functions
+- [ ] model.load_weights() reads full absolute path
