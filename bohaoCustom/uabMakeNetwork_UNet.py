@@ -81,7 +81,17 @@ class UnetModel(network.Network):
         for layer_name in layers_list:
             feed_layer = layer_name + '/'
             load_dict[feed_layer] = feed_layer
-        tf.contrib.framework.init_from_checkpoint(ckpt_dir, load_dict)
+        try:
+            latest_check_point = tf.train.latest_checkpoint(ckpt_dir)
+            tf.contrib.framework.init_from_checkpoint(ckpt_dir, load_dict)
+            print('loaded {}'.format(latest_check_point))
+        except tf.errors.NotFoundError:
+            with open(os.path.join(ckpt_dir, 'checkpoint'), 'r') as f:
+                ckpts = f.readlines()
+            ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
+            latest_check_point = os.path.join(ckpt_dir, ckpt_file_name)
+            tf.contrib.framework.init_from_checkpoint(ckpt_dir, load_dict)
+            print('loaded {}'.format(latest_check_point))
 
     def restore_model(self,sess):
         # automatically restore last saved model if checkpoint exists
