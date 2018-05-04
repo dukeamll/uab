@@ -170,7 +170,7 @@ class UnetEncoder(uabMakeNetwork_UNet.UnetModelCrop):
 
 
 def image_summary(image, prediction, img_mean=np.array((0, 0, 0), dtype=np.float32)):
-    return np.concatenate([image+img_mean, prediction+img_mean], axis=2)
+    return np.concatenate([image+img_mean, prediction+img_mean], axis=2).astype(np.uint8)
 
 
 class UnetVAE(uabMakeNetwork_UNet.UnetModel):
@@ -201,40 +201,53 @@ class UnetVAE(uabMakeNetwork_UNet.UnetModel):
         sfn = self.sfn
 
         # downsample
-        conv1, pool1 = self.conv_conv_pool(self.inputs[x_name], [sfn, sfn], self.trainable, name='conv1',
-                                           padding='same', dropout=self.dropout_rate)
-        conv2, pool2 = self.conv_conv_pool(pool1, [sfn*2, sfn*2], self.trainable, name='conv2',
-                                           padding='same', dropout=self.dropout_rate)
-        conv3, pool3 = self.conv_conv_pool(pool2, [sfn*4, sfn*4], self.trainable, name='conv3',
-                                           padding='same', dropout=self.dropout_rate)
-        conv4, pool4 = self.conv_conv_pool(pool3, [sfn*8, sfn*8], self.trainable, name='conv4',
-                                           padding='same', dropout=self.dropout_rate)
-        conv5 = self.conv_conv_pool(pool4, [sfn*16, sfn*16], self.trainable, name='conv5', pool=False,
-                                    padding='valid', dropout=self.dropout_rate)
+        with tf.variable_scope('encoder'):
+            conv1, pool1 = self.conv_conv_pool(self.inputs[x_name], [sfn, sfn], self.trainable, name='conv1',
+                                               padding='same', dropout=self.dropout_rate)
+            conv2, pool2 = self.conv_conv_pool(pool1, [sfn*2, sfn*2], self.trainable, name='conv2',
+                                               padding='same', dropout=self.dropout_rate)
+            conv3, pool3 = self.conv_conv_pool(pool2, [sfn*4, sfn*4], self.trainable, name='conv3',
+                                               padding='same', dropout=self.dropout_rate)
+            conv4, pool4 = self.conv_conv_pool(pool3, [sfn*6, sfn*6], self.trainable, name='conv4',
+                                               padding='same', dropout=self.dropout_rate)
+            conv5, pool5 = self.conv_conv_pool(pool4, [sfn*8, sfn*8], self.trainable, name='conv5',
+                                               padding='same', dropout=self.dropout_rate)
 
-        # encoding
-        conv6, pool6 = self.conv_conv_pool(conv5, [sfn*8, sfn*8], self.trainable, name='encode6',
-                                           padding='same', dropout=self.dropout_rate)  # 12*12*256
-        conv7, pool7 = self.conv_conv_pool(pool6, [sfn*4, sfn*4], self.trainable, name='encode7',
-                                           padding='same', dropout=self.dropout_rate)  # 4*4*128
-        pool7_flat = tf.reshape(pool7, [-1, 5760])
-        self.encoding = self.fc_fc(pool7_flat, [1000, self.latent_num], self.trainable, 'encode_final',
-                                   activation=tf.nn.relu, dropout=False)
+            # encoding
+            pool5_flat = tf.reshape(pool5, [-1, 16384])
+            self.encoding = self.fc_fc(pool5_flat, [10000, 5000, self.latent_num], self.trainable, 'encode_final',
+                                       activation=tf.nn.relu, dropout=False)
 
-        self.z_mean = self.fc_fc(self.encoding, [self.latent_num], self.trainable, 'encode_z_mean',
-                                 activation=None, dropout=False)
-        self.z_sigma = self.fc_fc(self.encoding, [self.latent_num], self.trainable, 'encode_z_sigma',
-                                 activation=None, dropout=False)
-        z = self.sampling()
+            self.z_mean = self.fc_fc(self.encoding, [self.latent_num], self.trainable, 'encode_z_mean',
+                                     activation=None, dropout=False)
+            self.z_sigma = self.fc_fc(self.encoding, [self.latent_num], self.trainable, 'encode_z_sigma',
+                                     activation=None, dropout=False)
+        # sampling
+        with tf.variable_scope('sampling'):
+            epsilon = tf.random_normal(shape=(self.bs, self.latent_num))
+            z = self.z_mean + tf.multiply(self.z_sigma, epsilon)
 
         # decoder
-        outputs = tf.reshape(z, [-1, 4, 4, self.latent_num//(4*4)])
-        outputs = tf.layers.conv2d_transpose(outputs, 512, 2, 2, name='decode_2')
-        outputs = tf.layers.conv2d_transpose(outputs, 256, 2, 2, name='decode_3')
-        outputs = tf.layers.conv2d_transpose(outputs, 128, 2, 2, name='decode_4')
-        outputs = tf.layers.conv2d_transpose(outputs, 64, 2, 2, name='decode_5')
-        outputs = tf.layers.conv2d_transpose(outputs, 32, 2, 2, name='decode_6')
-        self.pred = tf.layers.conv2d_transpose(outputs, 3, 2, 2, name='decode_7')
+        with tf.variable_scope('decoder'):
+            up0 = self.fc_fc(z, [5000, 10000, 8*8*256], self.trainable, 'decode_z', activation=None, dropout=False)
+            up0 = tf.reshape(up0, [-1, 8, 8, 256])
+
+            up1 = self.upsampling_2D(up0, 'upsample_0')
+            conv6 = self.conv_conv_pool(up1, [sfn * 8, sfn * 8], self.trainable, name='conv6',
+                                        padding='same', dropout=self.dropout_rate, pool=False)
+            up2 = self.upsampling_2D(conv6, 'upsample_1')
+            conv7 = self.conv_conv_pool(up2, [sfn * 4, sfn * 4], self.trainable, name='conv7',
+                                        padding='same', dropout=self.dropout_rate, pool=False)
+            up3 = self.upsampling_2D(conv7, 'upsample_2')
+            conv8 = self.conv_conv_pool(up3, [sfn * 2, sfn * 2], self.trainable, name='conv8',
+                                        padding='same', dropout=self.dropout_rate, pool=False)
+            up4 = self.upsampling_2D(conv8, 'upsample_3')
+            conv9 = self.conv_conv_pool(up4, [sfn, sfn], self.trainable, name='conv9',
+                                        padding='same', dropout=self.dropout_rate, pool=False)
+            up5 = self.upsampling_2D(conv9, 'upsample_4')
+            conv10 = self.conv_conv_pool(up5, [3], self.trainable, name='conv10',
+                                            padding='same', dropout=self.dropout_rate, pool=False)
+            self.pred = tf.layers.conv2d(conv10, class_num, (1, 1), name='final', activation=None, padding='same')
 
     def make_loss(self, y_name, loss_type='xent', **kwargs):
         with tf.variable_scope('loss'):

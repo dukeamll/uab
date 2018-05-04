@@ -178,20 +178,21 @@ class UnetModel(network.Network):
                                                                                      global_step=self.global_step,
                                                                                      var_list=var_list)
 
-    def make_summary(self):
-        tf.summary.histogram('Predicted Prob', tf.argmax(tf.nn.softmax(self.pred), 1))
+    def make_summary(self, hist=False):
+        if hist:
+            tf.summary.histogram('Predicted Prob', tf.argmax(tf.nn.softmax(self.pred), 1))
         tf.summary.scalar('Cross Entropy', self.loss)
         tf.summary.scalar('learning rate', self.learning_rate)
         self.summary = tf.summary.merge_all()
 
     def train_config(self, x_name, y_name, n_train, n_valid, patch_size, ckdir, loss_type='xent', train_var_filter=None,
-                     **kwargs):
+                     hist=False, **kwargs):
         self.make_loss(y_name, loss_type, **kwargs)
         self.make_learning_rate(n_train)
         self.make_update_ops(x_name, y_name)
         self.make_optimizer(train_var_filter)
         self.make_ckdir(ckdir, patch_size)
-        self.make_summary()
+        self.make_summary(hist)
         self.config = tf.ConfigProto()
         self.n_train = n_train
         self.n_valid = n_valid
