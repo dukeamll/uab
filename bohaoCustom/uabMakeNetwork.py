@@ -79,13 +79,13 @@ class Network(object):
             return self.name
 
     def conv_conv_pool(self, input_, n_filters, training, name, kernal_size=(3, 3),
-                       pool=True, pool_size=(2, 2), pool_stride=(2, 2),
+                       conv_stride=(1, 1), pool=True, pool_size=(2, 2), pool_stride=(2, 2),
                        activation=tf.nn.relu, padding='same', bn=True, dropout=None):
         net = input_
 
         with tf.variable_scope('layer{}'.format(name)):
             for i, F in enumerate(n_filters):
-                net = tf.layers.conv2d(net, F, kernal_size, activation=None,
+                net = tf.layers.conv2d(net, F, kernal_size, activation=None, strides=conv_stride,
                                        padding=padding, name='conv_{}'.format(i + 1))
                 if bn:
                     net = tf.layers.batch_normalization(net, training=training, name='bn_{}'.format(i+1))
