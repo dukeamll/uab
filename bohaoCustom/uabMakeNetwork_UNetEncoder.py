@@ -254,7 +254,8 @@ class UnetVAE(uabMakeNetwork_UNet.UnetModel):
             _, width, height, _ = self.inputs[y_name].shape
             prediction = tf.reshape(self.pred, [-1, ])
             gt = tf.reshape(self.inputs[y_name], [-1, ])
-            xent_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=prediction, labels=gt))
+            #xent_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=prediction, labels=gt))
+            xent_loss = tf.reduce_mean(tf.pow(gt - prediction, 2))
             kl_loss = -0.5 * tf.reduce_mean(1.0 + self.z_sigma - tf.square(self.z_mean) - tf.exp(self.z_sigma))
             self.loss = xent_loss + kl_loss
 
@@ -277,8 +278,6 @@ class UnetVAE(uabMakeNetwork_UNet.UnetModel):
             start_epoch = 0
             start_step = 0
 
-        cross_entropy_valid_min = np.inf
-        iou_valid_max = 0
         for epoch in range(start_epoch, self.epochs):
             start_time = time.time()
             for step in range(start_step, n_train, self.bs):
@@ -403,7 +402,7 @@ class VGGVAE(UnetVAE):
 
         # encoding
         with tf.variable_scope('encoding'):
-            conv6_flat = tf.reshape(conv6, [-1, 512*4*4])
+            conv6_flat = tf.reshape(conv6, [-1, 32*sfn*4*4])
             self.z_mean = self.fc_fc(conv6_flat, [self.latent_num], self.trainable, 'encode_z_mean',
                                      activation=None, dropout=False)
             self.z_sigma = self.fc_fc(conv6_flat, [self.latent_num], self.trainable, 'encode_z_sigma',
@@ -411,7 +410,7 @@ class VGGVAE(UnetVAE):
         # sampling
         with tf.variable_scope('sampling'):
             epsilon = tf.random_normal(shape=(self.bs, self.latent_num))
-            z = self.z_mean + tf.multiply(self.z_sigma, epsilon)
+            z = self.z_mean + tf.multiply(tf.exp(self.z_sigma), epsilon)
 
         # decoder
         with tf.variable_scope('decoder'):

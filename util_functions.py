@@ -271,14 +271,6 @@ def savitzky_golay(y, window_size, order, deriv=0, rate=1):
     return np.convolve(m[::-1], y, mode='valid')
 
 
-class runtime_decorator(object):
-    def __init__(self):
-        self.start_time = time.time()
-
-    def __call__(self, *args, **kwargs):
-        duration = time.time() - self.start_time
-        print('duration {:.2f} hours'.format(duration / 60 / 60))
-
 ##-------------------------
 # for post proc
 def get_capacity(where='http://www.ctsolarscoreboard.com/static/data/RawData/Compiled_Scorecard.csv'):
