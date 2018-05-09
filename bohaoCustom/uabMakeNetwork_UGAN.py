@@ -7,6 +7,7 @@ import tensorflow as tf
 import utils
 from bohaoCustom import uabMakeNetwork as network
 from bohaoCustom import uabMakeNetwork_DeepLabV2
+from bohaoCustom import uabMakeNetwork_UNetEncoder
 
 
 def conv_conv_shrink(input_, n_filters, training, name, kernal_size=(3, 3),
@@ -264,7 +265,7 @@ def image_summary(prediction, img_mean=np.array((0, 0, 0), dtype=np.float32)):
     return (prediction+img_mean).astype(np.uint8)
 
 
-class VGGGAN(UGAN):
+class VGGGAN(uabMakeNetwork_UNetEncoder.VGGVAE):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
                  batch_size=5, start_filter_num=32, latent_num=500):
@@ -284,20 +285,17 @@ class VGGGAN(UGAN):
         self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
                                                             input_size[1], 3], name='validation_images')
 
-    def create_graph(self, x_name, class_num):
+    def create_graph(self, x_name, class_num, start_filter_num=32):
         self.class_num = class_num
         self.input_size = self.inputs[x_name].shape[1:3]
 
-        self.gener = self.build_decoder(tf.reshape(self.inputs['Z'], [-1, self.latent_num]))
+        self.gener = self.build_generator(tf.reshape(self.inputs['Z'], [-1, self.latent_num]))
 
-        self.discr_f = self.build_encoder(self.gener, None)
-        self.discr_r = self.build_encoder(self.inputs[x_name], True)
+        self.discr_f = self.build_discriminator(self.gener, None)
+        self.discr_r = self.build_discriminator(self.inputs[x_name], True)
 
-    def build_encoder(self, x, reuse):
-        print("-----------build encoder-----------")
-        print('input:', x.shape)
-        scope_name = 'encoder'
-        with tf.variable_scope(scope_name, reuse=reuse):
+    def build_discriminator(self, x, reuse):
+        with tf.variable_scope('encoder', reuse=reuse):
             conv1 = self.conv_conv_pool(x, [self.sfn], self.trainable, name='conv1',
                                         conv_stride=(2, 2), padding='same', dropout=self.dropout_rate,
                                         pool=False, activation=tf.nn.relu)  # 16*128*128
@@ -318,13 +316,11 @@ class VGGGAN(UGAN):
                                         pool=False, activation=tf.nn.relu)  # 512*4*4
             conv6_flat = tf.reshape(conv6, [-1, 32 * self.sfn * 4 * 4])
             self.representation = self.fc_fc(conv6_flat, [self.latent_num], self.trainable, 'encoding',
-                                        activation=None, dropout=False)
-            print("after encoder:", self.representation.shape)
+                                        activation=tf.nn.relu, dropout=False)
             return self.fc_fc(self.representation, [1], self.trainable, 'discriminate', activation=tf.nn.sigmoid,
                               dropout=False)
 
-    def build_decoder(self, z):
-        print("-----------build decoder-----------")
+    def build_generator(self, z):
         with tf.variable_scope('decoder'):
             up0 = self.fc_fc(z, [512 * 4 * 4], self.trainable, 'decode_z', activation=None, dropout=False)
             up0 = tf.reshape(up0, [-1, 4, 4, 512])
@@ -351,8 +347,47 @@ class VGGGAN(UGAN):
                                          activation=tf.nn.relu)  # 16*128*128
             up6 = self.upsampling_2D(conv10, 'upsample_5')  # 16*256*256
             outputs = tf.layers.conv2d(up6, self.class_num, (3, 3), name='final', activation=None, padding='same')
-            print("after decoder:", outputs.shape)
         return outputs
+
+    def make_loss(self, y_name, loss_type='xent', **kwargs):
+        self.g_loss = -tf.reduce_mean(tf.log(self.discr_f))
+        self.d_loss = -tf.reduce_mean(tf.log(self.discr_r) + tf.log(1. - self.discr_f))
+
+    def make_optimizer(self, train_var_filter):
+        optm_g = tf.train.AdamOptimizer(self.learning_rate).minimize(self.g_loss,
+                                                                     var_list=tf.get_collection(
+                                                                         tf.GraphKeys.GLOBAL_VARIABLES,
+                                                                         scope='decoder'),
+                                                                     global_step=self.global_step)
+        optm_d = tf.train.AdamOptimizer(self.learning_rate).minimize(self.d_loss,
+                                                                     var_list=tf.get_collection(
+                                                                         tf.GraphKeys.GLOBAL_VARIABLES,
+                                                                         scope='encoder'),
+                                                                     global_step=self.global_step)
+        self.optimizer = {'d': optm_d, 'g': optm_g}
+
+    def make_summary(self, hist=False):
+        tf.summary.scalar('d loss', self.d_loss)
+        tf.summary.scalar('g loss', self.g_loss)
+        tf.summary.scalar('learning rate', self.learning_rate)
+        self.summary = tf.summary.merge_all()
+
+    def train_config(self, x_name, y_name, n_train, n_valid, patch_size, ckdir, loss_type='xent', train_var_filter=None,
+                     hist=False, **kwargs):
+        self.make_loss(y_name, loss_type, **kwargs)
+        self.make_learning_rate(n_train)
+        self.make_update_ops(x_name, y_name)
+        self.make_optimizer(train_var_filter)
+        self.make_ckdir(ckdir, patch_size)
+        self.make_summary()
+        self.config = tf.ConfigProto()
+        self.n_train = n_train
+        self.n_valid = n_valid
+
+    def make_update_ops(self, x_name, z_name):
+        tf.add_to_collection('inputs', self.inputs[x_name])
+        tf.add_to_collection('inputs', self.inputs[z_name])
+        self.update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
     def train(self, x_name, y_name, n_train, sess, summary_writer, n_valid=1000,
               train_reader=None, valid_reader=None,
