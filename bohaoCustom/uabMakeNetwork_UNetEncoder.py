@@ -439,3 +439,45 @@ class VGGVAE(UnetVAE):
                                         activation=tf.nn.relu)  # 16*128*128
             up6 = self.upsampling_2D(conv10, 'upsample_5')  # 16*256*256
             self.pred = tf.layers.conv2d(up6, class_num, (3, 3), name='final', activation=None, padding='same')
+
+    def encoding(self, x_name, sess, test_iterator):
+        for X_batch in test_iterator:
+            pred = sess.run([self.z_mean, self.z_sigma], feed_dict={self.inputs[x_name]: X_batch,
+                                                                    self.trainable: False})
+            encoded = np.zeros(self.latent_num * 2)
+            encoded[:self.latent_num] = pred[0][0, :]
+            encoded[self.latent_num:] = pred[1][0, :]
+            yield encoded
+
+    def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
+            isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
+            valid_iou=False, best_model=True):
+        if gpu is not None:
+            os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+        if isTrain:
+            coord = tf.train.Coordinator()
+            with tf.Session(config=self.config) as sess:
+                # init model
+                init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
+                sess.run(init)
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                # load model
+                if pretrained_model_dir is not None:
+                    if layers2load is not None:
+                        self.load_weights(pretrained_model_dir, layers2load)
+                    else:
+                        self.load(pretrained_model_dir, sess, saver, epoch=load_epoch_num)
+                threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+                try:
+                    train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
+                    self.train('X', 'Y', self.n_train, sess, train_summary_writer,
+                               n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
+                               image_summary=image_summary, img_mean=img_mean,
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir,
+                               valid_iou=valid_iou)
+                finally:
+                    coord.request_stop()
+                    coord.join(threads)
+                    saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)

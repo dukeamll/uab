@@ -102,7 +102,7 @@ class UGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
 
     def make_summary(self):
         tf.summary.scalar('d loss', self.d_loss)
-        tf.summary.scalar('g loss', self.d_loss)
+        tf.summary.scalar('g loss', self.g_loss)
         tf.summary.scalar('learning rate', self.learning_rate)
         self.summary = tf.summary.merge_all()
 
@@ -258,6 +258,219 @@ class UGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             image_pred = uabUtilreader.un_patchify(result, tile_size, patch_size)
             return util_functions.get_pred_labels(image_pred) * truth_val'''
             pass
+
+
+def image_summary(prediction, img_mean=np.array((0, 0, 0), dtype=np.float32)):
+    return (prediction+img_mean).astype(np.uint8)
+
+
+class VGGGAN(UGAN):
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
+                 learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
+                 batch_size=5, start_filter_num=32, latent_num=500):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.name = 'VGGGAN'
+        self.model_name = self.get_unique_name(model_name)
+        self.sfn = start_filter_num
+        self.learning_rate = None
+        self.valid_d = tf.placeholder(tf.float32, [])
+        self.valid_g = tf.placeholder(tf.float32, [])
+        self.update_ops = None
+        self.config = None
+        self.n_train = 0
+        self.n_valid = 0
+        self.latent_num = latent_num
+        self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
+                                                            input_size[1], 3], name='validation_images')
+
+    def create_graph(self, x_name, class_num):
+        self.class_num = class_num
+        self.input_size = self.inputs[x_name].shape[1:3]
+
+        self.gener = self.build_decoder(tf.reshape(self.inputs['Z'], [-1, self.latent_num]))
+
+        self.discr_f = self.build_encoder(self.gener, None)
+        self.discr_r = self.build_encoder(self.inputs[x_name], True)
+
+    def build_encoder(self, x, reuse):
+        print("-----------build encoder-----------")
+        print('input:', x.shape)
+        scope_name = 'encoder'
+        with tf.variable_scope(scope_name, reuse=reuse):
+            conv1 = self.conv_conv_pool(x, [self.sfn], self.trainable, name='conv1',
+                                        conv_stride=(2, 2), padding='same', dropout=self.dropout_rate,
+                                        pool=False, activation=tf.nn.relu)  # 16*128*128
+            conv2 = self.conv_conv_pool(conv1, [2 * self.sfn], self.trainable, name='conv2',
+                                        conv_stride=(2, 2), padding='same', dropout=self.dropout_rate,
+                                        pool=False, activation=tf.nn.relu)  # 32*64*64
+            conv3 = self.conv_conv_pool(conv2, [4 * self.sfn], self.trainable, name='conv3',
+                                        conv_stride=(2, 2), padding='same', dropout=self.dropout_rate,
+                                        pool=False, activation=tf.nn.relu)  # 64*32*32
+            conv4 = self.conv_conv_pool(conv3, [8 * self.sfn], self.trainable, name='conv4',
+                                        conv_stride=(2, 2), padding='same', dropout=self.dropout_rate,
+                                        pool=False, activation=tf.nn.relu)  # 128*16*16
+            conv5 = self.conv_conv_pool(conv4, [16 * self.sfn], self.trainable, name='conv5',
+                                        conv_stride=(2, 2), padding='same', dropout=self.dropout_rate,
+                                        pool=False, activation=tf.nn.relu)  # 256*8*8
+            conv6 = self.conv_conv_pool(conv5, [32 * self.sfn], self.trainable, name='conv6',
+                                        conv_stride=(2, 2), padding='same', dropout=self.dropout_rate,
+                                        pool=False, activation=tf.nn.relu)  # 512*4*4
+            conv6_flat = tf.reshape(conv6, [-1, 32 * self.sfn * 4 * 4])
+            self.representation = self.fc_fc(conv6_flat, [self.latent_num], self.trainable, 'encoding',
+                                        activation=None, dropout=False)
+            print("after encoder:", self.representation.shape)
+            return self.fc_fc(self.representation, [1], self.trainable, 'discriminate', activation=tf.nn.sigmoid,
+                              dropout=False)
+
+    def build_decoder(self, z):
+        print("-----------build decoder-----------")
+        with tf.variable_scope('decoder'):
+            up0 = self.fc_fc(z, [512 * 4 * 4], self.trainable, 'decode_z', activation=None, dropout=False)
+            up0 = tf.reshape(up0, [-1, 4, 4, 512])
+
+            up1 = self.upsampling_2D(up0, 'upsample_0')  # 512*8*8
+            conv6 = self.conv_conv_pool(up1, [self.sfn * 16], self.trainable, name='conv6',
+                                        padding='same', dropout=self.dropout_rate, pool=False,
+                                        activation=tf.nn.relu)  # 256*8*8
+            up2 = self.upsampling_2D(conv6, 'upsample_1')  # 256*16*16
+            conv7 = self.conv_conv_pool(up2, [self.sfn * 8], self.trainable, name='conv7',
+                                        padding='same', dropout=self.dropout_rate, pool=False,
+                                        activation=tf.nn.relu)  # 128*16*16
+            up3 = self.upsampling_2D(conv7, 'upsample_2')  # 128*32*32
+            conv8 = self.conv_conv_pool(up3, [self.sfn * 4], self.trainable, name='conv8',
+                                        padding='same', dropout=self.dropout_rate, pool=False,
+                                        activation=tf.nn.relu)  # 64*32*32
+            up4 = self.upsampling_2D(conv8, 'upsample_3')  # 64*64*64
+            conv9 = self.conv_conv_pool(up4, [self.sfn * 2], self.trainable, name='conv9',
+                                        padding='same', dropout=self.dropout_rate, pool=False,
+                                        activation=tf.nn.relu)  # 32*64*64
+            up5 = self.upsampling_2D(conv9, 'upsample_4')  # 32*128*128
+            conv10 = self.conv_conv_pool(up5, [self.sfn], self.trainable, name='conv10',
+                                         padding='same', dropout=self.dropout_rate, pool=False,
+                                         activation=tf.nn.relu)  # 16*128*128
+            up6 = self.upsampling_2D(conv10, 'upsample_5')  # 16*256*256
+            outputs = tf.layers.conv2d(up6, self.class_num, (3, 3), name='final', activation=None, padding='same')
+            print("after decoder:", outputs.shape)
+        return outputs
+
+    def train(self, x_name, y_name, n_train, sess, summary_writer, n_valid=1000,
+              train_reader=None, valid_reader=None,
+              image_summary=None, verb_step=100, save_epoch=5,
+              img_mean=np.array((0, 0, 0), dtype=np.float32),
+              continue_dir=None, valid_iou=False):
+        # define summary operations
+        valid_g_summary_op = tf.summary.scalar('g_loss_validation', self.valid_g)
+        valid_d_summary_op = tf.summary.scalar('d_loss_validation', self.valid_d)
+        valid_image_summary_op = tf.summary.image('Validation_images_summary', self.valid_images,
+                                                  max_outputs=10)
+
+        if continue_dir is not None:
+            self.load(continue_dir, sess)
+            gs = sess.run(self.global_step)
+            start_epoch = int(np.ceil(gs/n_train*self.bs))
+            start_step = gs - int(start_epoch*n_train/self.bs)
+        else:
+            start_epoch = 0
+            start_step = 0
+
+        loss_valid_min = np.inf
+        for epoch in range(start_epoch, self.epochs):
+            start_time = time.time()
+            for step in range(start_step, n_train, self.bs):
+                X_batch, _ = train_reader.readerAction(sess)
+                Z_batch = np.random.uniform(-1, 1, [self.bs, self.latent_num])
+                _, self.global_step_value = sess.run([self.optimizer['g'], self.global_step],
+                                                     feed_dict={self.inputs[x_name]:X_batch,
+                                                                self.inputs[y_name]:Z_batch,
+                                                                self.trainable: True})
+                X_batch, _ = train_reader.readerAction(sess)
+                Z_batch = np.random.uniform(-1, 1, [self.bs, self.latent_num])
+                _, self.global_step_value = sess.run([self.optimizer['d'], self.global_step],
+                                                     feed_dict={self.inputs[x_name]: X_batch,
+                                                               self.inputs[y_name]: Z_batch,
+                                                               self.trainable: True})
+
+                if self.global_step_value % verb_step == 0:
+                    d_loss, g_loss, step_summary = sess.run([self.d_loss, self.g_loss, self.summary],
+                                                    feed_dict={self.inputs[x_name]: X_batch,
+                                                               self.inputs[y_name]: Z_batch,
+                                                               self.trainable: False})
+                    summary_writer.add_summary(step_summary, self.global_step_value)
+                    print('Epoch {:d} step {:d}\td_loss = {:.3f}, g_loss = {:.3f}'.
+                          format(epoch, self.global_step_value, d_loss, g_loss))
+            # validation
+            loss_valid_mean = []
+            g_loss_val_mean = []
+            d_loss_val_mean = []
+            for step in range(0, n_valid, self.bs):
+                X_batch_val, _ = valid_reader.readerAction(sess)
+                Z_batch_val = np.random.uniform(-1, 1, [self.bs, self.latent_num])
+                d_loss_val, g_loss_val = sess.run([self.d_loss, self.g_loss],
+                                                  feed_dict={self.inputs[x_name]: X_batch_val,
+                                                             self.inputs[y_name]: Z_batch_val,
+                                                             self.trainable: False})
+                loss_valid_mean.append(d_loss_val+g_loss_val)
+                g_loss_val_mean.append(g_loss_val)
+                d_loss_val_mean.append(d_loss_val)
+            loss_valid_mean = np.mean(loss_valid_mean)
+            duration = time.time() - start_time
+            print('Validation loss: {:.3f}, duration: {:.3f}'.format(loss_valid_mean, duration))
+            valid_g_summary = sess.run(valid_g_summary_op,
+                                       feed_dict={self.valid_g: np.mean(g_loss_val_mean)})
+            valid_d_summary = sess.run(valid_d_summary_op,
+                                       feed_dict={self.valid_d_entropy: np.mean(d_loss_val_mean)})
+            summary_writer.add_summary(valid_g_summary, self.global_step_value)
+            summary_writer.add_summary(valid_d_summary, self.global_step_value)
+            if loss_valid_mean < loss_valid_min:
+                loss_valid_min = loss_valid_mean
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir))
+
+            valid_img_gen = sess.run(self.gener, feed_dict={self.inputs[y_name]: Z_batch_val,
+                                                            self.trainable: False})
+            if image_summary is not None:
+                valid_image_summary = sess.run(valid_image_summary_op,
+                                               feed_dict={self.valid_images:
+                                                              image_summary(valid_img_gen, img_mean)})
+                summary_writer.add_summary(valid_image_summary, self.global_step_value)
+
+            if epoch % save_epoch == 0:
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                saver.save(sess, '{}/model_{}.ckpt'.format(self.ckdir, epoch), global_step=self.global_step)
+
+    def run(self, train_reader=None, valid_reader=None, test_reader=None, pretrained_model_dir=None, layers2load=None,
+            isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
+            valid_iou=False, best_model=True):
+        if gpu is not None:
+            os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+        if isTrain:
+            coord = tf.train.Coordinator()
+            with tf.Session(config=self.config) as sess:
+                # init model
+                init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
+                sess.run(init)
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                # load model
+                if pretrained_model_dir is not None:
+                    if layers2load is not None:
+                        self.load_weights(pretrained_model_dir, layers2load)
+                    else:
+                        self.load(pretrained_model_dir, sess, saver, epoch=load_epoch_num)
+                threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+                try:
+                    train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
+                    self.train('X', 'Z', self.n_train, sess, train_summary_writer,
+                               n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
+                               image_summary=image_summary, img_mean=img_mean,
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir,
+                               valid_iou=valid_iou)
+                finally:
+                    coord.request_stop()
+                    coord.join(threads)
+                    saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)
 
 
 def make_thumbnail(imgs, mult, row, col):
