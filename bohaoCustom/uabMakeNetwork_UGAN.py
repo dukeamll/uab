@@ -274,8 +274,8 @@ class VGGGAN(UGAN):
         self.model_name = self.get_unique_name(model_name)
         self.sfn = start_filter_num
         self.learning_rate = None
-        self.valid_d = tf.placeholder(tf.float32, [])
-        self.valid_g = tf.placeholder(tf.float32, [])
+        self.valid_d_summary = tf.placeholder(tf.float32, [])
+        self.valid_g_summary = tf.placeholder(tf.float32, [])
         self.update_ops = None
         self.config = None
         self.n_train = 0
@@ -360,8 +360,8 @@ class VGGGAN(UGAN):
               img_mean=np.array((0, 0, 0), dtype=np.float32),
               continue_dir=None, valid_iou=False):
         # define summary operations
-        valid_g_summary_op = tf.summary.scalar('g_loss_validation', self.valid_g)
-        valid_d_summary_op = tf.summary.scalar('d_loss_validation', self.valid_d)
+        valid_g_summary_op = tf.summary.scalar('g_loss_validation', self.valid_g_summary)
+        valid_d_summary_op = tf.summary.scalar('d_loss_validation', self.valid_d_summary)
         valid_image_summary_op = tf.summary.image('Validation_images_summary', self.valid_images,
                                                   max_outputs=10)
 
@@ -417,9 +417,9 @@ class VGGGAN(UGAN):
             duration = time.time() - start_time
             print('Validation loss: {:.3f}, duration: {:.3f}'.format(loss_valid_mean, duration))
             valid_g_summary = sess.run(valid_g_summary_op,
-                                       feed_dict={self.valid_g: np.mean(g_loss_val_mean)})
+                                       feed_dict={self.valid_g_summary: np.mean(g_loss_val_mean)})
             valid_d_summary = sess.run(valid_d_summary_op,
-                                       feed_dict={self.valid_d_entropy: np.mean(d_loss_val_mean)})
+                                       feed_dict={self.valid_d_summary: np.mean(d_loss_val_mean)})
             summary_writer.add_summary(valid_g_summary, self.global_step_value)
             summary_writer.add_summary(valid_d_summary, self.global_step_value)
             if loss_valid_mean < loss_valid_min:
