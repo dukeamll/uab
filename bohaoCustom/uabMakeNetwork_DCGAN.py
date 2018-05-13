@@ -287,7 +287,8 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
                 saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
                 saver.save(sess, '{}/best_model.ckpt'.format(self.ckdir))
 
-            valid_img_gen = sess.run(self.G, feed_dict={self.inputs[z_name]: Z_batch_val})
+            Z_batch_sample = np.random.uniform(self.bs, 1, [self.bs, self.z_dim]).astype(np.float32)
+            valid_img_gen = sess.run(self.G, feed_dict={self.inputs[z_name]: Z_batch_sample})
             if image_summary is not None:
                 valid_image_summary = sess.run(valid_image_summary_op,
                                                feed_dict={self.valid_images:
