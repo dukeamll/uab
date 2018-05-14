@@ -204,12 +204,12 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
         self.summary = tf.summary.merge_all()
 
     def train_config(self, x_name, z_name, n_train, n_valid, patch_size, ckdir, loss_type='xent', train_var_filter=None,
-                     hist=False, **kwargs):
+                     hist=False, par_dir=None, **kwargs):
         self.make_loss(z_name, loss_type, **kwargs)
         self.make_learning_rate(n_train * 3)
         self.make_update_ops(x_name, z_name)
         self.make_optimizer(train_var_filter)
-        self.make_ckdir(ckdir, patch_size)
+        self.make_ckdir(ckdir, patch_size, par_dir)
         self.make_summary()
         self.config = tf.ConfigProto()
         self.n_train = n_train

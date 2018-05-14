@@ -31,13 +31,16 @@ class Network(object):
     def create_graph(self, **kwargs):
         raise NotImplementedError('Must be implemented by the subclass')
 
-    def make_ckdir(self, ckdir, patch_size):
+    def make_ckdir(self, ckdir, patch_size, par_dir=None):
         if type(patch_size) is list:
             patch_size = patch_size[0]
         # make unique directory for save
         dir_name = '{}_PS{}_BS{}_EP{}_LR{}_DS{}_DR{}'.\
             format(self.model_name, patch_size, self.bs, self.epochs, self.lr, self.ds, self.dr)
-        self.ckdir = os.path.join(ckdir, dir_name)
+        if par_dir is None:
+            self.ckdir = os.path.join(ckdir, dir_name)
+        else:
+            self.ckdir = os.path.join(ckdir, par_dir, dir_name)
 
     def load(self, model_path, sess, saver=None, epoch=None, best_model=True):
         # this can only be called after create_graph()

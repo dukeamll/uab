@@ -31,13 +31,16 @@ class UnetModel(network.Network):
         self.n_train = 0
         self.n_valid = 0
 
-    def make_ckdir(self, ckdir, patch_size):
+    def make_ckdir(self, ckdir, patch_size, par_dir=None):
         if type(patch_size) is list:
             patch_size = patch_size[0]
         # make unique directory for save
         dir_name = '{}_PS{}_BS{}_EP{}_LR{}_DS{}_DR{}_SFN{}'.\
             format(self.model_name, patch_size, self.bs, self.epochs, self.lr, self.ds, self.dr, self.sfn)
-        self.ckdir = os.path.join(ckdir, dir_name)
+        if par_dir is None:
+            self.ckdir = os.path.join(ckdir, dir_name)
+        else:
+            self.ckdir = os.path.join(ckdir, par_dir, dir_name)
 
     def create_graph(self, x_name, class_num):
         self.class_num = class_num
@@ -186,12 +189,12 @@ class UnetModel(network.Network):
         self.summary = tf.summary.merge_all()
 
     def train_config(self, x_name, y_name, n_train, n_valid, patch_size, ckdir, loss_type='xent', train_var_filter=None,
-                     hist=False, **kwargs):
+                     hist=False, par_dir=None, **kwargs):
         self.make_loss(y_name, loss_type, **kwargs)
         self.make_learning_rate(n_train)
         self.make_update_ops(x_name, y_name)
         self.make_optimizer(train_var_filter)
-        self.make_ckdir(ckdir, patch_size)
+        self.make_ckdir(ckdir, patch_size, par_dir)
         self.make_summary(hist)
         self.config = tf.ConfigProto()
         self.n_train = n_train
