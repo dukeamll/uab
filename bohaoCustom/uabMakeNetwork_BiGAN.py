@@ -3,6 +3,7 @@ This architecture uses the following reference:
 1. http://bamos.github.io/2016/08/09/deep-completion/
 2. https://github.com/bamos/dcgan-completion.tensorflow
 3. https://github.com/carpedm20/DCGAN-tensorflow
+4. https://arxiv.org/pdf/1605.09782.pdf
 
 Modifications to make GAN more stable for larger images:
 1. Use soft and noisy labels (https://github.com/soumith/ganhacks#6-use-soft-and-noisy-labels)
@@ -15,8 +16,9 @@ import time
 import math
 import numpy as np
 import tensorflow as tf
+import scipy.stats as stats
 from bohaoCustom import uabMakeNetwork as network
-from bohaoCustom import uabMakeNetwork_DeepLabV2
+from bohaoCustom import uabMakeNetwork_DCGAN
 
 
 class batch_norm(object):
@@ -89,7 +91,7 @@ def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=
             return tf.matmul(input_, matrix) + bias
 
 
-class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
+class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
                  batch_size=5, start_filter_num=32, z_dim=1000, lr_mult=5, beta1=0.5):
@@ -116,11 +118,14 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
         # make batch normalizer
         self.d_bn = []
         self.g_bn = []
+        self.e_bn = []
         for i in range(self.depth + 1):
             if i > 0:
                 self.d_bn.append(batch_norm(name='d_bn{}'.format(i)))
+                self.e_bn.append(batch_norm(name='e_bn{}'.format(i)))
             self.g_bn.append(batch_norm(name='g_bn{}'.format(i)))
         self.G = []
+        self.E = []
         self.D, self.D_logits = [], []
         self.D_, self.D_logits_ = [], []
         self.d_loss, self.g_loss = [], []
@@ -146,9 +151,18 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             h, h_w, h_b = deconv2d(h, [self.bs, s_h[0], s_w[0], self.class_num], name='g_h{}'.format(self.depth + 1),
                                    with_w=True)
 
+            return tf.nn.tanh(h), z
+
+    def encoder(self, input_):
+        with tf.variable_scope('encoder'):
+            h = lrelu(conv2d(input_, self.sfn, name='e_h0_conv'))
+            for i in range(self.depth - 1):
+                h = lrelu(self.e_bn[i](conv2d(h, self.sfn * 2 ** (i + 1), name='e_h{}_conv'.format(i + 1))))
+            h = linear(tf.reshape(h, [self.bs, 4 * 4 * self.sfn * 2 ** (self.depth - 1)]), self.z_dim,
+                       'e_h{}_lin'.format(self.depth + 1))
             return tf.nn.tanh(h)
 
-    def discriminator(self, input_, minibatch_dis=True, reuse=False, n_kernels=300, dim_per_kernel=50):
+    def discriminator(self, input_, encoded, minibatch_dis=True, reuse=False, n_kernels=300, dim_per_kernel=50):
         with tf.variable_scope('discriminator') as scope:
             if reuse:
                 scope.reuse_variables()
@@ -156,15 +170,17 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             for i in range(self.depth - 1):
                 h = lrelu(self.d_bn[i](conv2d(h, self.sfn * 2 ** (i + 1), name='d_h{}_conv'.format(i + 1))))
             if minibatch_dis:
-                x = self.minibatch_discrimination(tf.reshape(h, [2 * self.bs, 4 * 4 * self.sfn * 2 ** (self.depth - 1)]),
-                                                  n_kernels, dim_per_kernel)
+                h = tf.reshape(h, [2 * self.bs, 4 * 4 * self.sfn * 2 ** (self.depth - 1)])
+                h = tf.concat([h, encoded], axis=1)
+                x = self.minibatch_discrimination(h, n_kernels, dim_per_kernel)
                 h = linear(x, 1, 'd_h{}_lin'.format(self.depth + 1))
                 h0 = h[:self.bs, :]  # tf.slice(h, [0, 0], [self.bs, 0])
                 h1 = h[self.bs:, :]  # tf.slice(h, [self.bs, 0], [2 * self.bs, 0])
                 return tf.nn.sigmoid(h0), h0, tf.nn.sigmoid(h1), h1
             else:
-                h = linear(tf.reshape(h, [self.bs, 4 * 4 * self.sfn * 2 ** (self.depth - 1)]), 1,
-                           'd_h{}_lin'.format(self.depth + 1))
+                h = tf.reshape(h, [self.bs, 4 * 4 * self.sfn * 2 ** (self.depth - 1)])
+                h = tf.concat([h, encoded], axis=1)
+                h = linear(h, 1, 'd_h{}_lin'.format(self.depth + 1))
                 return tf.nn.sigmoid(h), h
 
     def minibatch_discrimination(self, h, n_kernels, dim_per_kernel):
@@ -194,14 +210,16 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
     def create_graph(self, x_name, class_num, start_filter_num=32, reduce_dim=True, minibatch_dis=True,
                      n_kernels=300, dim_per_kernel=50):
         self.class_num = class_num
-        self.G = self.generator(tf.reshape(self.inputs['Z'], [self.bs, self.z_dim]))
+        self.G, z = self.generator(tf.reshape(self.inputs['Z'], [self.bs, self.z_dim]))
+        self.E = self.encoder(self.inputs[x_name])
         if minibatch_dis:
             self.D, self.D_logits, self.D_, self.D_logits_ = \
-                self.discriminator(tf.concat([self.inputs[x_name], self.G], 0), reuse=False,
-                                   n_kernels=n_kernels, dim_per_kernel=dim_per_kernel)
+                self.discriminator(tf.concat([self.inputs[x_name], self.G], 0),
+                                   tf.concat([self.E, z], axis=0),
+                                   reuse=False, n_kernels=n_kernels, dim_per_kernel=dim_per_kernel)
         else:
-            self.D, self.D_logits = self.discriminator(self.inputs[x_name], reuse=False, minibatch_dis=False)
-            self.D_, self.D_logits_ = self.discriminator(self.G, reuse=True, minibatch_dis=False)
+            self.D, self.D_logits = self.discriminator(self.inputs[x_name], self.E, reuse=False, minibatch_dis=False)
+            self.D_, self.D_logits_ = self.discriminator(self.G, z, reuse=True, minibatch_dis=False)
 
     def make_loss(self, z_name, loss_type='xent', **kwargs):
         with tf.variable_scope('d_loss'):
@@ -222,7 +240,7 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
 
     def make_optimizer(self, train_var_filter):
         t_vars = tf.trainable_variables()
-        d_vars = [var for var in t_vars if 'd_' in var.name]
+        d_vars = [var for var in t_vars if 'd_' in var.name] + [var for var in t_vars if 'e_' in var.name]
         g_vars = [var for var in t_vars if 'g_' in var.name]
         optm_d = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).\
             minimize(self.d_loss, var_list=d_vars, global_step=self.global_step)
@@ -274,6 +292,7 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             start_step = 0
 
         loss_valid_min = np.inf
+        sampler = stats.truncnorm(-1, 1, loc=0, scale=1)
         for epoch in range(start_epoch, self.epochs):
             start_time = time.time()
             for step_cnt, step in enumerate(range(start_step, n_train, self.bs)):
