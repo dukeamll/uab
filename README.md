@@ -5,6 +5,7 @@
     2. [Extract patches](./%5Dexamples/examplescript_extractPatches.py)
     3. [Train CNN](./%5Dexamples/examplescript_train_unet_inria.py)
     4. Test CNN: [single image](./%5Dexamples/examplescript_test_pretrained_model.ipynb), [image batches](./%5Dexamples/examplescript_test_pretrained_model_inria.py)
+    5. [Train MTL CNN](./%5Dexamples/examplescript_train_unet_inria_road_mtl.py)
 3. Supported Network
     1. [U-Net](./bohaoCustom/uabMakeNetwork_UNet.py)
     2. [FRRN](./bohaoCustom/uabMakeNetwork_FRRN.py)
