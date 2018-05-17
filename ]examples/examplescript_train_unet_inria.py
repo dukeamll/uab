@@ -68,11 +68,11 @@ print(blCol.readMetadata())                         # now inria collection has 4
 extrObj = uab_DataHandlerFunctions.\
     uabPatchExtr([0, 1, 2, 4],                              # extract all 4 channels
                  cSize=chip_size,                           # patch size as 572*572
-                 numPixOverlap=int(model.get_overlap()/2),  # overlap as 92
+                 numPixOverlap=int(model.get_overlap()),    # overlap as 184
                  extSave=['jpg', 'jpg', 'jpg', 'png'],      # save rgb files as jpg and gt as png
                  isTrain=True,                              # the extracted patches are used for training
                  gtInd=3,                                   # gt is the 4th(count from 0) in the list of indices
-                 pad=model.get_overlap())                   # pad around the tiles
+                 pad=int(model.get_overlap() / 2))          # pad around the tiles
 patchDir = extrObj.run(blCol)
 
 # make data reader

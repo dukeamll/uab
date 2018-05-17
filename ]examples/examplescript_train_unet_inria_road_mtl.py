@@ -101,7 +101,7 @@ def main(flags):
     # extract patches
     extrObj_inria = uab_DataHandlerFunctions.uabPatchExtr([0, 1, 2, 4],
                                                           cSize=flags.input_size,
-                                                          numPixOverlap=int(model.get_overlap() / 2),
+                                                          numPixOverlap=int(model.get_overlap()),
                                                           extSave=['jpg', 'jpg', 'jpg', 'png'],
                                                           isTrain=True,
                                                           gtInd=3,
@@ -141,7 +141,7 @@ def main(flags):
     # extract patches
     extrObj_road = uab_DataHandlerFunctions.uabPatchExtr([0, 1, 2, 4],
                                                          cSize=flags.input_size,
-                                                         numPixOverlap=int(model.get_overlap() / 2),
+                                                         numPixOverlap=int(model.get_overlap()),
                                                          extSave=['jpg', 'jpg', 'jpg', 'png'],
                                                          isTrain=True,
                                                          gtInd=3,
