@@ -221,14 +221,15 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
                                                                                  minval=0.7, maxval=1.2)))
 
     def make_optimizer(self, train_var_filter):
-        t_vars = tf.trainable_variables()
-        d_vars = [var for var in t_vars if 'd_' in var.name]
-        g_vars = [var for var in t_vars if 'g_' in var.name]
-        optm_d = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).\
-            minimize(self.d_loss, var_list=d_vars, global_step=self.global_step)
-        optm_g = tf.train.AdamOptimizer(self.learning_rate * self.lr_mult, beta1=self.beta1).\
-            minimize(self.g_loss, var_list=g_vars, global_step=self.global_step)
-        self.optimizer = {'d': optm_d, 'g': optm_g}
+        with tf.control_dependencies(self.update_ops):
+            t_vars = tf.trainable_variables()
+            d_vars = [var for var in t_vars if 'd_' in var.name]
+            g_vars = [var for var in t_vars if 'g_' in var.name]
+            optm_d = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).\
+                minimize(self.d_loss, var_list=d_vars, global_step=self.global_step)
+            optm_g = tf.train.AdamOptimizer(self.learning_rate * self.lr_mult, beta1=self.beta1).\
+                minimize(self.g_loss, var_list=g_vars, global_step=self.global_step)
+            self.optimizer = {'d': optm_d, 'g': optm_g}
 
     def make_update_ops(self, x_name, z_name):
         tf.add_to_collection('inputs', self.inputs[x_name])
