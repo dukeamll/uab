@@ -207,9 +207,34 @@ class ImageLabelReader(object):
         return [augDat]
 
 
-#for debugging purposes
+class ImageLabelReader_cifar(ImageLabelReader):
+    def __init__(self, batch_size, patch_size, is_train=True):
+        self.isQueue = 0
+        self.readManager = self.readFromDiskIteratorTrain(batch_size, patch_size, is_train)
+
+    def readFromDiskIteratorTrain(self, batch_size, patch_size, is_train):
+        import keras
+        (x_train, _), (x_test, _) = keras.datasets.cifar10.load_data()
+        if is_train:
+            data = x_train
+            n_data = data.shape[0]
+        else:
+            data = x_test
+            n_data = data.shape[0]
+
+        idx = np.random.permutation(n_data)
+        while True:
+            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], 3)).astype(np.float32)
+            for cnt, randInd in enumerate(idx):
+                block = data[randInd, :, :, :]
+                image_batch[cnt % batch_size, :, :, :] = scipy.misc.imresize(block, patch_size)
+                if ((cnt + 1) % batch_size == 0):
+                    yield image_batch, None
+
+
+# for debugging purposes
 if __name__ == '__main__':    
-    parentDir = '/media/ei-edl01/data/remote_sensing_data/Results/PatchExtr/inria_orgd/chipExtrReg_cSz572x572'
+    '''parentDir = '/media/ei-edl01/data/remote_sensing_data/Results/PatchExtr/inria_orgd/chipExtrReg_cSz572x572'
     
     coord = tf.train.Coordinator()
     batch_size = 10
@@ -237,4 +262,12 @@ if __name__ == '__main__':
         plt.imshow(N1[i,:,:,1])
         plt.subplot(5,3,i*3+3)
         plt.imshow(N1[i,:,:,2])
+    plt.show()'''
+
+    im_reader = ImageLabelReader_cifar(6, (128, 128), True)
+    data, _ = im_reader.readerAction()
+    import matplotlib.pyplot as plt
+    for i in range(6):
+        plt.subplot(231+i)
+        plt.imshow(data[i, :, :, :])
     plt.show()

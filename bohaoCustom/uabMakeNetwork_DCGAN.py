@@ -89,6 +89,16 @@ def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=
             return tf.matmul(input_, matrix) + bias
 
 
+def make_thumbnail(img_batch):
+    img_num, height, width, _ = img_batch.shape
+    n_row = int(np.floor(np.sqrt(img_num)))
+    img = np.zeros((1, n_row*height, n_row*width, 3))
+    for i in range(n_row):
+        for j in range(n_row):
+            img[0, (i*height):((i+1)*height), (j*width):((j+1)*width)] = img_batch[n_row*i + j]
+    return img
+
+
 class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
@@ -102,8 +112,9 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
         self.valid_d_summary = tf.placeholder(tf.float32, [])
         self.valid_g_summary = tf.placeholder(tf.float32, [])
         self.valid_iou = tf.placeholder(tf.float32, [])
-        self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
-                                                            input_size[1], 3], name='validation_images')
+        n_row = int(np.floor(np.sqrt(self.bs)))
+        self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0] * n_row,
+                                                            input_size[1] * n_row, 3], name='validation_images')
         self.class_num = 3
         self.update_ops = None
         self.z_dim = z_dim
@@ -194,7 +205,7 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
     def create_graph(self, x_name, class_num, start_filter_num=32, reduce_dim=True, minibatch_dis=True,
                      n_kernels=300, dim_per_kernel=50):
         self.class_num = class_num
-        self.G = self.generator(tf.reshape(self.inputs['Z'], [self.bs, self.z_dim]))
+        self.G = self.generator(self.inputs['Z'])
         if minibatch_dis:
             self.D, self.D_logits, self.D_, self.D_logits_ = \
                 self.discriminator(tf.concat([self.inputs[x_name], self.G], 0), reuse=False,
@@ -281,13 +292,16 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
                 X_batch, _ = train_reader.readerAction(sess)
                 Z_batch = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
                 X_batch = 2 * (X_batch / 255 - 0.5)
-                _, _, self.global_step_value = sess.run([self.optimizer['d'], self.optimizer['g'], self.global_step],
+                _, self.global_step_value = sess.run([self.optimizer['d'], self.global_step],
                                                         feed_dict={self.inputs[x_name]: X_batch,
                                                                    self.inputs[z_name]: Z_batch,
                                                                    self.trainable: True})
+
                 Z_batch = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
-                _ = sess.run(self.optimizer['g'], feed_dict={self.inputs[x_name]: X_batch,
-                                                             self.inputs[z_name]: Z_batch,
+                _ = sess.run(self.optimizer['g'], feed_dict={self.inputs[z_name]: Z_batch,
+                                                             self.trainable: True})
+                Z_batch = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
+                _ = sess.run(self.optimizer['g'], feed_dict={self.inputs[z_name]: Z_batch,
                                                              self.trainable: True})
 
                 if step_cnt % verb_step == 0:
@@ -329,6 +343,7 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
 
             Z_batch_sample = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
             valid_img_gen = sess.run(self.G, feed_dict={self.inputs[z_name]: Z_batch_sample})
+            valid_img_gen = make_thumbnail(valid_img_gen)
             if image_summary is not None:
                 valid_image_summary = sess.run(valid_image_summary_op,
                                                feed_dict={self.valid_images:
