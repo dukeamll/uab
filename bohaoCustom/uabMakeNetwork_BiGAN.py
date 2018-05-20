@@ -104,8 +104,9 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
         self.valid_d_summary = tf.placeholder(tf.float32, [])
         self.valid_g_summary = tf.placeholder(tf.float32, [])
         self.valid_iou = tf.placeholder(tf.float32, [])
-        self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
-                                                            input_size[1], 3], name='validation_images')
+        n_row = int(np.floor(np.sqrt(self.bs)))
+        self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0] * n_row,
+                                                            input_size[1] * n_row, 3], name='validation_images')
         self.class_num = 3
         self.update_ops = None
         self.z_dim = z_dim
@@ -153,8 +154,11 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
             h = tf.nn.relu(self.g_bn[0](h0))
 
             for i in range(1, self.depth + 1):
-                h, h_w, h_b = deconv2d(h, [self.bs, s_h[-1-i], s_w[-1-i], self.sfn * 2 ** (self.depth - i)],
-                                       name='g_h{}'.format(i), with_w=True)
+                #h, h_w, h_b = deconv2d(h, [self.bs, s_h[-1-i], s_w[-1-i], self.sfn * 2 ** (self.depth - i)],
+                #                       name='g_h{}'.format(i), with_w=True)
+                h = self.upsampling_2D(h, 'g_up_{}'.format(i))
+                h = tf.layers.conv2d(h, self.sfn * 2 ** (self.depth - i), (3, 3), name='g_h{}'.format(i),
+                                     padding='same')
                 h = tf.nn.relu(self.g_bn[i](h))
 
             h, h_w, h_b = deconv2d(h, [self.bs, s_h[0], s_w[0], self.class_num], name='g_h{}'.format(self.depth + 1),

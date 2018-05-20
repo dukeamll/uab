@@ -289,8 +289,6 @@ class UnetModel(network.Network):
     def test(self, x_name, sess, test_iterator):
         result = []
         for X_batch in test_iterator:
-            #pred = sess.run(tf.nn.softmax(self.pred), feed_dict={self.inputs[x_name]:X_batch,
-            #                                                     self.trainable: False})
             pred = sess.run(self.output, feed_dict={self.inputs[x_name]: X_batch,
                                                     self.trainable: False})
             result.append(pred)
