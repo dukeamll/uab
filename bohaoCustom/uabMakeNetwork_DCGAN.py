@@ -102,7 +102,7 @@ def make_thumbnail(img_batch):
 class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
-                 batch_size=5, start_filter_num=32, z_dim=1000, lr_mult=5, beta1=0.5):
+                 batch_size=5, start_filter_num=32, z_dim=1000, lr_mult=5, beta1=0.5, depth=None):
         network.Network.__init__(self, inputs, trainable, dropout_rate,
                                  learn_rate, decay_step, decay_rate, epochs, batch_size)
         self.name = 'DCGAN'
@@ -122,7 +122,10 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
         self.beta1 = beta1
 
         self.output_height, self.output_width = input_size[0], input_size[1]
-        self.depth = int(np.log2(input_size[0] / 4))
+        if not depth:
+            self.depth = int(np.log2(input_size[0] / 4))
+        else:
+            self.depth = depth
 
         # make batch normalizer
         self.d_bn = []
@@ -140,22 +143,26 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
         with tf.variable_scope('generator'):
             # calculate height & width at each layer
             s_h, s_w = [self.output_height], [self.output_width]
-            for i in range(self.depth + 1):
+            for i in range(self.depth):
                 s_h.append(conv_out_size_same(s_h[-1], 2))
                 s_w.append(conv_out_size_same(s_w[-1], 2))
 
             # project `z` and reshape
-            z_, h0_w, h0_b = linear(z, self.sfn * 2 ** self.depth * s_h[-1] * s_w[-1], 'g_h0_lin', with_w=True)
-            h0 = tf.reshape(z_, [-1, s_h[-1], s_w[-1], self.sfn * 2 ** self.depth])
+            print('Z: {}'.format(z.shape))
+            z_, h0_w, h0_b = linear(z, self.sfn * 2 ** (self.depth - 1) * s_h[-1] * s_w[-1], 'g_h0_lin', with_w=True)
+            h0 = tf.reshape(z_, [-1, s_h[-1], s_w[-1], self.sfn * 2 ** (self.depth - 1)])
             h = tf.nn.relu(self.g_bn[0](h0))
+            print('g_h0: {}'.format(h0.shape))
 
-            for i in range(1, self.depth + 1):
-                h, h_w, h_b = deconv2d(h, [self.bs, s_h[-1-i], s_w[-1-i], self.sfn * 2 ** (self.depth - i)],
+            for i in range(1, self.depth):
+                h, h_w, h_b = deconv2d(h, [self.bs, s_h[-1-i], s_w[-1-i], self.sfn * 2 ** (self.depth - i - 1)],
                                        name='g_h{}'.format(i), with_w=True)
                 h = tf.nn.relu(self.g_bn[i](h))
+                print('g_h{}(with g{}): {}'.format(i, i, h.shape))
 
-            h, h_w, h_b = deconv2d(h, [self.bs, s_h[0], s_w[0], self.class_num], name='g_h{}'.format(self.depth + 1),
+            h, h_w, h_b = deconv2d(h, [self.bs, s_h[0], s_w[0], self.class_num], name='g_h{}'.format(self.depth),
                                    with_w=True)
+            print('g_h{}: {}'.format(self.depth, h.shape))
 
             return tf.nn.tanh(h)
 
@@ -164,55 +171,23 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             if reuse:
                 scope.reuse_variables()
             h = lrelu(conv2d(input_, self.sfn, name='d_h0_conv'))
+            print('d_h0: {}'.format(h.shape))
             for i in range(self.depth - 1):
                 h = lrelu(self.d_bn[i](conv2d(h, self.sfn * 2 ** (i + 1), name='d_h{}_conv'.format(i + 1))))
-            if minibatch_dis:
-                x = self.minibatch_discrimination(tf.reshape(h, [2 * self.bs, 4 * 4 * self.sfn * 2 ** (self.depth - 1)]),
-                                                  n_kernels, dim_per_kernel)
-                h = linear(x, 1, 'd_h{}_lin'.format(self.depth + 1))
-                h0 = h[:self.bs, :]  # tf.slice(h, [0, 0], [self.bs, 0])
-                h1 = h[self.bs:, :]  # tf.slice(h, [self.bs, 0], [2 * self.bs, 0])
-                return tf.nn.sigmoid(h0), h0, tf.nn.sigmoid(h1), h1
-            else:
-                h = linear(tf.reshape(h, [self.bs, 4 * 4 * self.sfn * 2 ** (self.depth - 1)]), 1,
-                           'd_h{}_lin'.format(self.depth + 1))
-                return tf.nn.sigmoid(h), h
+                print('d_h{}: {}'.format(i+1, h.shape))
+            latent_height = self.output_height//(2 ** self.depth)
+            h = linear(tf.reshape(h, [self.bs, latent_height * latent_height * self.sfn * 2 ** (self.depth - 1)]), 1,
+                       'd_h{}_lin'.format(self.depth))
+            print('d_h{}: {}'.format(self.depth, h.shape))
+            return tf.nn.sigmoid(h), h
 
-    def minibatch_discrimination(self, h, n_kernels, dim_per_kernel):
-        x = linear(h, n_kernels * dim_per_kernel, scope='d_minidis')
-        activation = tf.reshape(x, [2 * self.bs, n_kernels, dim_per_kernel])
-        big = tf.zeros((2 * self.bs, 2 * self.bs), dtype=tf.float32)
-        big = big + tf.eye(2 * self.bs)
-        big = tf.expand_dims(big, 1)
-
-        abs_dif = tf.reduce_sum(tf.abs(tf.expand_dims(activation, 3) -
-                                       tf.expand_dims(tf.transpose(activation, [1, 2, 0]), 0)), 2)
-        mask = 1. - big
-        masked = tf.exp(-abs_dif) * mask
-
-        def half(tens, second):
-            m, n, _ = tens.get_shape()
-            m = int(m)
-            n = int(n)
-            return tf.slice(tens, [0, 0, second * self.bs], [m, n, self.bs])
-
-        f1 = tf.reduce_sum(half(masked, 0), 2) / tf.reduce_sum(half(mask, 0))
-        f2 = tf.reduce_sum(half(masked, 1), 2) / tf.reduce_sum(half(mask, 1))
-        minibatch_features = [f1, f2]
-        x = tf.concat([h] + minibatch_features, 1)
-        return x
-
-    def create_graph(self, x_name, class_num, start_filter_num=32, reduce_dim=True, minibatch_dis=True,
-                     n_kernels=300, dim_per_kernel=50):
+    def create_graph(self, x_name, class_num, start_filter_num=32, reduce_dim=True, n_kernels=300, dim_per_kernel=50):
         self.class_num = class_num
+        print('Make Gnerator:')
         self.G = self.generator(self.inputs['Z'])
-        if minibatch_dis:
-            self.D, self.D_logits, self.D_, self.D_logits_ = \
-                self.discriminator(tf.concat([self.inputs[x_name], self.G], 0), reuse=False,
-                                   n_kernels=n_kernels, dim_per_kernel=dim_per_kernel)
-        else:
-            self.D, self.D_logits = self.discriminator(self.inputs[x_name], reuse=False, minibatch_dis=False)
-            self.D_, self.D_logits_ = self.discriminator(self.G, reuse=True, minibatch_dis=False)
+        print('Make Discriminator:')
+        self.D, self.D_logits = self.discriminator(self.inputs[x_name], reuse=False, minibatch_dis=False)
+        self.D_, self.D_logits_ = self.discriminator(self.G, reuse=True, minibatch_dis=False)
 
     def make_loss(self, z_name, loss_type='xent', **kwargs):
         with tf.variable_scope('d_loss'):
@@ -291,16 +266,14 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             for step_cnt, step in enumerate(range(start_step, n_train, self.bs)):
                 X_batch, _ = train_reader.readerAction(sess)
                 Z_batch = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
-                X_batch = 2 * (X_batch / 255 - 0.5)
+                X_batch = X_batch / 127.5 -1
                 _, self.global_step_value = sess.run([self.optimizer['d'], self.global_step],
                                                         feed_dict={self.inputs[x_name]: X_batch,
                                                                    self.inputs[z_name]: Z_batch,
                                                                    self.trainable: True})
 
-                Z_batch = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
                 _ = sess.run(self.optimizer['g'], feed_dict={self.inputs[z_name]: Z_batch,
                                                              self.trainable: True})
-                Z_batch = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
                 _ = sess.run(self.optimizer['g'], feed_dict={self.inputs[z_name]: Z_batch,
                                                              self.trainable: True})
 
@@ -319,7 +292,7 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             for step in range(0, n_valid, self.bs):
                 X_batch_val, _ = valid_reader.readerAction(sess)
                 Z_batch_val = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
-                X_batch_val = 2 * (X_batch_val / 255 - 0.5)
+                X_batch_val = X_batch_val / 127.5 -1
                 d_loss_val, g_loss_val = sess.run([self.d_loss, self.g_loss],
                                                   feed_dict={self.inputs[x_name]: X_batch_val,
                                                              self.inputs[z_name]: Z_batch_val,
