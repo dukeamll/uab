@@ -13,6 +13,7 @@ Modifications to make GAN more stable for larger images:
 import os
 import time
 import math
+import imageio
 import numpy as np
 import tensorflow as tf
 from bohaoCustom import uabMakeNetwork as network
@@ -166,7 +167,7 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
 
             return tf.nn.tanh(h)
 
-    def discriminator(self, input_, minibatch_dis=True, reuse=False, n_kernels=300, dim_per_kernel=50):
+    def discriminator(self, input_, reuse=False):
         with tf.variable_scope('discriminator') as scope:
             if reuse:
                 scope.reuse_variables()
@@ -181,13 +182,13 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             print('d_h{}: {}'.format(self.depth, h.shape))
             return tf.nn.sigmoid(h), h
 
-    def create_graph(self, x_name, class_num, start_filter_num=32, reduce_dim=True, n_kernels=300, dim_per_kernel=50):
+    def create_graph(self, x_name, class_num, start_filter_num=32, reduce_dim=True):
         self.class_num = class_num
         print('Make Gnerator:')
         self.G = self.generator(self.inputs['Z'])
         print('Make Discriminator:')
-        self.D, self.D_logits = self.discriminator(self.inputs[x_name], reuse=False, minibatch_dis=False)
-        self.D_, self.D_logits_ = self.discriminator(self.G, reuse=True, minibatch_dis=False)
+        self.D, self.D_logits = self.discriminator(self.inputs[x_name], reuse=False)
+        self.D_, self.D_logits_ = self.discriminator(self.G, reuse=True)
 
     def make_loss(self, z_name, loss_type='xent', **kwargs):
         with tf.variable_scope('d_loss'):
@@ -317,6 +318,13 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             Z_batch_sample = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
             valid_img_gen = sess.run(self.G, feed_dict={self.inputs[z_name]: Z_batch_sample})
             valid_img_gen = make_thumbnail(valid_img_gen)
+
+            thumbnail_path = self.ckdir + '_thumb'
+            if not os.path.exists(thumbnail_path):
+                os.makedirs(thumbnail_path)
+            imageio.imsave(os.path.join(thumbnail_path, '{}.png'.format(epoch)),
+                           ((valid_img_gen[0, :, :, :] + 1) * 127.5).astype(np.uint8))
+
             if image_summary is not None:
                 valid_image_summary = sess.run(valid_image_summary_op,
                                                feed_dict={self.valid_images:

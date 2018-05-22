@@ -175,7 +175,7 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
 
             return tf.nn.tanh(h), z
 
-    def discriminator(self, input_, encoded, reuse=False, n_kernels=300, dim_per_kernel=50):
+    def discriminator(self, input_, encoded, reuse=False):
         with tf.variable_scope('discriminator') as scope:
             if reuse:
                 scope.reuse_variables()
@@ -202,29 +202,21 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
         self.D, self.D_logits = self.discriminator(self.inputs[x_name], self.E, reuse=False)
         self.D_, self.D_logits_ = self.discriminator(self.G, z, reuse=True)
 
-    def make_loss(self, z_name, loss_type='xent', **kwargs):
-        with tf.variable_scope('d_loss'):
-            d_loss_real = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits,
-                                                        labels=tf.random_uniform([self.bs, 1],
-                                                                                 minval=0.7, maxval=1.2)))
-            d_loss_fake = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_,
-                                                        labels=tf.random_uniform([self.bs, 1],
-                                                                                 minval=0.0, maxval=0.3)))
-            self.d_loss = 0.5 * d_loss_real + 0.5 * d_loss_fake
-        with tf.variable_scope('g_loss'):
-            self.g_loss = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_,
-                                                        labels=tf.random_uniform([self.bs, 1],
-                                                                                 minval=0.7, maxval=1.2)))
-
     def make_optimizer(self, train_var_filter):
-        t_vars = tf.trainable_variables()
+        '''t_vars = tf.trainable_variables()
         d_vars = [var for var in t_vars if 'd_' in var.name]
         g_vars = [var for var in t_vars if 'g_' in var.name] + [var for var in t_vars if 'e_' in var.name]
         optm_d = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).\
             minimize(self.d_loss, var_list=d_vars, global_step=self.global_step)
         optm_g = tf.train.AdamOptimizer(self.learning_rate * self.lr_mult, beta1=self.beta1).\
             minimize(self.g_loss, var_list=g_vars, global_step=self.global_step)
-        self.optimizer = {'d': optm_d, 'g': optm_g}
+        self.optimizer = {'d': optm_d, 'g': optm_g}'''
+        with tf.control_dependencies(self.update_ops):
+            t_vars = tf.trainable_variables()
+            d_vars = [var for var in t_vars if 'd_' in var.name]
+            g_vars = [var for var in t_vars if 'g_' in var.name] + [var for var in t_vars if 'e_' in var.name]
+            optm_d = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).\
+                minimize(self.d_loss, var_list=d_vars, global_step=self.global_step)
+            optm_g = tf.train.AdamOptimizer(self.learning_rate * self.lr_mult, beta1=self.beta1).\
+                minimize(self.g_loss, var_list=g_vars, global_step=self.global_step)
+            self.optimizer = {'d': optm_d, 'g': optm_g}
