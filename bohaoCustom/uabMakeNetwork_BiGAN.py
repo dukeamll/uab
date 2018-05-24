@@ -145,13 +145,14 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
             h = linear(tf.reshape(h, [self.bs, latent_height * latent_height * self.sfn * 2 ** (self.depth - 1)]),
                        self.z_dim, 'e_h{}_lin'.format(self.depth + 1))
             print('e_h{}: {}'.format(self.depth, h.shape))
-            return tf.nn.tanh(h)
+            self.encoded = tf.nn.tanh(h)
+            return self.encoded
 
     def generator(self, z):
         with tf.variable_scope('generator'):
             # calculate height & width at each layer
             s_h, s_w = [self.output_height], [self.output_width]
-            for i in range(self.depth + 1):
+            for i in range(self.depth):
                 s_h.append(conv_out_size_same(s_h[-1], 2))
                 s_w.append(conv_out_size_same(s_w[-1], 2))
 
@@ -162,10 +163,13 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
             h = tf.nn.relu(self.g_bn[0](h0))
             print('g_h0: {}'.format(h0.shape))
 
-            for i in range(1, self.depth + 1):
-                h = self.upsampling_2D(h, 'g_up_{}'.format(i))
+            for i in range(1, self.depth):
+                '''h = self.upsampling_2D(h, 'g_up_{}'.format(i))
                 h = tf.layers.conv2d(h, self.sfn * 2 ** (self.depth - i - 1), (3, 3), name='g_h{}'.format(i),
                                      padding='same')
+                h = tf.nn.relu(self.g_bn[i](h))'''
+                h, h_w, h_b = deconv2d(h, [self.bs, s_h[-1 - i], s_w[-1 - i], self.sfn * 2 ** (self.depth - i - 1)],
+                                       name='g_h{}'.format(i), with_w=True)
                 h = tf.nn.relu(self.g_bn[i](h))
                 print('g_h{}(with g{}): {}'.format(i, i, h.shape))
 
@@ -186,6 +190,7 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
                 print('d_h{}: {}'.format(i + 1, h.shape))
             latent_height = self.output_height // (2 ** self.depth)
             h = tf.reshape(h, [self.bs, latent_height * latent_height * self.sfn * 2 ** (self.depth - 1)])
+            # encoded = linear(encoded, 1000, 'd_h_eco')
             h = tf.concat([h, encoded], axis=1)
             h = linear(h, 1, 'd_h{}_lin'.format(self.depth + 1))
             print('d_h{}: {}'.format(self.depth, h.shape))
@@ -220,3 +225,12 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
             optm_g = tf.train.AdamOptimizer(self.learning_rate * self.lr_mult, beta1=self.beta1).\
                 minimize(self.g_loss, var_list=g_vars, global_step=self.global_step)
             self.optimizer = {'d': optm_d, 'g': optm_g}
+
+    def test(self, x_name, sess, test_iterator):
+        result = []
+        for X_batch in test_iterator:
+            pred = sess.run(self.encoded, feed_dict={self.inputs[x_name]: X_batch,
+                                                     self.trainable: False})
+            result.append(pred)
+        result = np.vstack(result)
+        return result

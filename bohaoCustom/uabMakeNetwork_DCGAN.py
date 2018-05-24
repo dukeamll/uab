@@ -367,3 +367,11 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
                     coord.request_stop()
                     coord.join(threads)
                     saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)
+        else:
+            with tf.Session() as sess:
+                init = tf.global_variables_initializer()
+                sess.run(init)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
+                self.model_name = pretrained_model_dir.split('/')[-1]
+                result = self.test('X', sess, test_reader)
+            return result
