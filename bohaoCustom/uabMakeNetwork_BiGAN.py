@@ -164,10 +164,6 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
             print('g_h0: {}'.format(h0.shape))
 
             for i in range(1, self.depth):
-                '''h = self.upsampling_2D(h, 'g_up_{}'.format(i))
-                h = tf.layers.conv2d(h, self.sfn * 2 ** (self.depth - i - 1), (3, 3), name='g_h{}'.format(i),
-                                     padding='same')
-                h = tf.nn.relu(self.g_bn[i](h))'''
                 h, h_w, h_b = deconv2d(h, [self.bs, s_h[-1 - i], s_w[-1 - i], self.sfn * 2 ** (self.depth - i - 1)],
                                        name='g_h{}'.format(i), with_w=True)
                 h = tf.nn.relu(self.g_bn[i](h))
@@ -190,7 +186,7 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
                 print('d_h{}: {}'.format(i + 1, h.shape))
             latent_height = self.output_height // (2 ** self.depth)
             h = tf.reshape(h, [self.bs, latent_height * latent_height * self.sfn * 2 ** (self.depth - 1)])
-            # encoded = linear(encoded, 1000, 'd_h_eco')
+            encoded = linear(encoded, 1000, 'd_h_eco')
             h = tf.concat([h, encoded], axis=1)
             h = linear(h, 1, 'd_h{}_lin'.format(self.depth + 1))
             print('d_h{}: {}'.format(self.depth, h.shape))
@@ -208,14 +204,6 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
         self.D_, self.D_logits_ = self.discriminator(self.G, z, reuse=True)
 
     def make_optimizer(self, train_var_filter):
-        '''t_vars = tf.trainable_variables()
-        d_vars = [var for var in t_vars if 'd_' in var.name]
-        g_vars = [var for var in t_vars if 'g_' in var.name] + [var for var in t_vars if 'e_' in var.name]
-        optm_d = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).\
-            minimize(self.d_loss, var_list=d_vars, global_step=self.global_step)
-        optm_g = tf.train.AdamOptimizer(self.learning_rate * self.lr_mult, beta1=self.beta1).\
-            minimize(self.g_loss, var_list=g_vars, global_step=self.global_step)
-        self.optimizer = {'d': optm_d, 'g': optm_g}'''
         with tf.control_dependencies(self.update_ops):
             t_vars = tf.trainable_variables()
             d_vars = [var for var in t_vars if 'd_' in var.name]
@@ -234,3 +222,9 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
             result.append(pred)
         result = np.vstack(result)
         return result
+
+    def encoding(self, x_name, sess, test_iterator):
+        for X_batch in test_iterator:
+            pred = sess.run(self.encoded, feed_dict={self.inputs[x_name]: X_batch,
+                                                     self.trainable: False})
+            yield pred[0, :]
