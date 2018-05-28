@@ -267,7 +267,7 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             for step_cnt, step in enumerate(range(start_step, n_train, self.bs)):
                 X_batch, _ = train_reader.readerAction(sess)
                 Z_batch = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
-                X_batch = X_batch / 127.5 -1
+                X_batch = X_batch / 127.5 - 1
                 _, self.global_step_value = sess.run([self.optimizer['d'], self.global_step],
                                                         feed_dict={self.inputs[x_name]: X_batch,
                                                                    self.inputs[z_name]: Z_batch,
@@ -293,7 +293,7 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
             for step in range(0, n_valid, self.bs):
                 X_batch_val, _ = valid_reader.readerAction(sess)
                 Z_batch_val = np.random.uniform(-1, 1, [self.bs, self.z_dim]).astype(np.float32)
-                X_batch_val = X_batch_val / 127.5 -1
+                X_batch_val = X_batch_val / 127.5 - 1
                 d_loss_val, g_loss_val = sess.run([self.d_loss, self.g_loss],
                                                   feed_dict={self.inputs[x_name]: X_batch_val,
                                                              self.inputs[z_name]: Z_batch_val,

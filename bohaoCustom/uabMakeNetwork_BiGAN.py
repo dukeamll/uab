@@ -14,9 +14,9 @@ Modifications to make GAN more stable for larger images:
 import os
 import time
 import math
+import imageio
 import numpy as np
 import tensorflow as tf
-import scipy.stats as stats
 from bohaoCustom import uabMakeNetwork as network
 from bohaoCustom import uabMakeNetwork_DCGAN
 
@@ -89,6 +89,16 @@ def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=
             return tf.matmul(input_, matrix) + bias, matrix, bias
         else:
             return tf.matmul(input_, matrix) + bias
+
+
+def make_thumbnail(img_batch):
+    img_num, height, width, _ = img_batch.shape
+    n_row = int(np.floor(np.sqrt(img_num)))
+    img = np.zeros((1, n_row*height, n_row*width, 3))
+    for i in range(n_row):
+        for j in range(n_row):
+            img[0, (i*height):((i+1)*height), (j*width):((j+1)*width)] = img_batch[n_row*i + j]
+    return img
 
 
 class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
@@ -173,7 +183,7 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
                                    with_w=True)
             print('g_h{}: {}'.format(self.depth, h.shape))
 
-            return tf.nn.tanh(h), z
+            return tf.nn.tanh(h)
 
     def discriminator(self, input_, encoded, reuse=False):
         with tf.variable_scope('discriminator') as scope:
@@ -186,28 +196,33 @@ class BiGAN(uabMakeNetwork_DCGAN.DCGAN):
                 print('d_h{}: {}'.format(i + 1, h.shape))
             latent_height = self.output_height // (2 ** self.depth)
             h = tf.reshape(h, [self.bs, latent_height * latent_height * self.sfn * 2 ** (self.depth - 1)])
-            encoded = linear(encoded, 1000, 'd_h_eco')
+            '''encoded = linear(encoded, 1000, 'd_z')
+            h = tf.concat([h, encoded], axis=1)'''
+
+            h = linear(h, 1000, 'd_x')
+            encoded = linear(encoded, 1000, 'd_z')
             h = tf.concat([h, encoded], axis=1)
+            print('after concat h: {}'.format(h.shape))
+
             h = linear(h, 1, 'd_h{}_lin'.format(self.depth + 1))
             print('d_h{}: {}'.format(self.depth, h.shape))
             return tf.nn.sigmoid(h), h
 
-    def create_graph(self, x_name, class_num, start_filter_num=32, reduce_dim=True, minibatch_dis=True,
-                     n_kernels=300, dim_per_kernel=50):
+    def create_graph(self, x_name, class_num, start_filter_num=32, reduce_dim=True):
         self.class_num = class_num
         print('Make Gnerator:')
-        self.G, z = self.generator(tf.reshape(self.inputs['Z'], [self.bs, self.z_dim]))
+        self.G = self.generator(self.inputs['Z'])
         print('Make Encoder:')
         self.E = self.encoder(self.inputs[x_name])
         print('Make Discriminator:')
         self.D, self.D_logits = self.discriminator(self.inputs[x_name], self.E, reuse=False)
-        self.D_, self.D_logits_ = self.discriminator(self.G, z, reuse=True)
+        self.D_, self.D_logits_ = self.discriminator(self.G, self.inputs['Z'], reuse=True)
 
     def make_optimizer(self, train_var_filter):
         with tf.control_dependencies(self.update_ops):
             t_vars = tf.trainable_variables()
-            d_vars = [var for var in t_vars if 'd_' in var.name]
-            g_vars = [var for var in t_vars if 'g_' in var.name] + [var for var in t_vars if 'e_' in var.name]
+            d_vars = [var for var in t_vars if 'd_' in var.name or 'e_' in var.name]
+            g_vars = [var for var in t_vars if 'g_' in var.name]
             optm_d = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).\
                 minimize(self.d_loss, var_list=d_vars, global_step=self.global_step)
             optm_g = tf.train.AdamOptimizer(self.learning_rate * self.lr_mult, beta1=self.beta1).\
