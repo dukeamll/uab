@@ -192,20 +192,32 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
 
     def make_loss(self, z_name, loss_type='xent', **kwargs):
         with tf.variable_scope('d_loss'):
-            d_loss_real = tf.reduce_mean(
+            '''d_loss_real = tf.reduce_mean(
                 tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits,
                                                         labels=tf.random_uniform([self.bs, 1],
                                                                                  minval=0.7, maxval=1.2)))
             d_loss_fake = tf.reduce_mean(
                 tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_,
                                                         labels=tf.random_uniform([self.bs, 1],
-                                                                                 minval=0.0, maxval=0.3)))
-            self.d_loss = 0.5 * d_loss_real + 0.5 * d_loss_fake
-        with tf.variable_scope('g_loss'):
-            self.g_loss = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_,
+                                                                                 minval=0.0, maxval=0.3)))'''
+            d_loss_real = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits,
                                                         labels=tf.random_uniform([self.bs, 1],
                                                                                  minval=0.7, maxval=1.2)))
+            d_loss_fake = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.zeros([self.bs, 1])))
+            self.d_loss = 0.5 * d_loss_real + 0.5 * d_loss_fake
+        with tf.variable_scope('g_loss'):
+            '''self.g_loss = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_,
+                                                        labels=tf.random_uniform([self.bs, 1],
+                                                                                 minval=0.7, maxval=1.2)))'''
+            '''self.g_loss = -0.5 * tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_,
+                                                        labels=tf.random_uniform([self.bs, 1],
+                                                                                 minval=0.0, maxval=0.3)))'''
+            self.g_loss = -0.5 * tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D_logits_, labels=tf.zeros([self.bs, 1])))
 
     def make_optimizer(self, train_var_filter):
         with tf.control_dependencies(self.update_ops):
@@ -275,8 +287,8 @@ class DCGAN(uabMakeNetwork_DeepLabV2.DeeplabV3):
 
                 _ = sess.run(self.optimizer['g'], feed_dict={self.inputs[z_name]: Z_batch,
                                                              self.trainable: True})
-                _ = sess.run(self.optimizer['g'], feed_dict={self.inputs[z_name]: Z_batch,
-                                                             self.trainable: True})
+                '''_ = sess.run(self.optimizer['g'], feed_dict={self.inputs[z_name]: Z_batch,
+                                                             self.trainable: True})'''
 
                 if step_cnt % verb_step == 0:
                     d_loss, g_loss, step_summary = sess.run([self.d_loss, self.g_loss, self.summary],
