@@ -207,10 +207,8 @@ class ALI(uabMakeNetwork_DCGAN.DCGAN):
 
     def create_graph(self, x_name, class_num, start_filter_num=32, reduce_dim=True):
         self.class_num = class_num
-        print('Make Gnerator:')
         self.G_x = self.generator_x(self.inputs['Z'], train=self.train_g, reuse=False)
         self.G_z = self.generator_z(self.inputs[x_name], train=self.train_g, reuse=False)
-        print('Make Discriminator:')
         self.D, self.D_logits = self.discriminator(self.inputs[x_name], self.G_z, train=self.train_d, reuse=False)
         self.D_, self.D_logits_ = self.discriminator(self.G_x, self.inputs['Z'], train=self.train_d, reuse=True)
         resampler = self.generator_x(self.generator_z(self.inputs[x_name], train=False, reuse=True), train=False,
@@ -328,14 +326,14 @@ class ALI(uabMakeNetwork_DCGAN.DCGAN):
     def test(self, x_name, sess, test_iterator):
         result = []
         for X_batch in test_iterator:
-            pred = sess.run(self.encoded, feed_dict={self.inputs[x_name]: X_batch,
-                                                     self.trainable: False})
+            pred = sess.run(self.G_z, feed_dict={self.inputs[x_name]: X_batch,
+                                                 self.trainable: False})
             result.append(pred)
         result = np.vstack(result)
         return result
 
     def encoding(self, x_name, sess, test_iterator):
         for X_batch in test_iterator:
-            pred = sess.run(self.encoded, feed_dict={self.inputs[x_name]: X_batch,
-                                                     self.trainable: False})
+            pred = sess.run(self.G_z, feed_dict={self.inputs[x_name]: X_batch,
+                                                 self.trainable: False})
             yield pred[0, :]
