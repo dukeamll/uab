@@ -327,13 +327,13 @@ class ALI(uabMakeNetwork_DCGAN.DCGAN):
         result = []
         for X_batch in test_iterator:
             pred = sess.run(self.G_z, feed_dict={self.inputs[x_name]: X_batch,
-                                                 self.trainable: False})
-            result.append(pred)
+                                                 self.train_d: False, self.train_g: False})
+            result.append(pred[:, 0, 0, :])
         result = np.vstack(result)
         return result
 
     def encoding(self, x_name, sess, test_iterator):
         for X_batch in test_iterator:
             pred = sess.run(self.G_z, feed_dict={self.inputs[x_name]: X_batch,
-                                                 self.trainable: False})
-            yield pred[0, :]
+                                                 self.train_d: False, self.train_g: False})
+            yield pred[0, 0, 0, :]
