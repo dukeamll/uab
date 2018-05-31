@@ -34,6 +34,7 @@ def add_nontied_bias(x, initializer=None):
         output = x + bias
     return output
 
+
 def cal_marginal(raw_marginals, eps=1e-7):
     marg = np.clip(raw_marginals.mean(axis=0), eps, 1. - eps)
     return np.log(marg / (1. - marg))
@@ -136,7 +137,7 @@ class ALI(uabMakeNetwork_DCGAN.DCGAN):
             with tf.variable_scope('block8'):
                 with tf.variable_scope('mu'):
                     h_mu = tf.layers.conv2d(h, filters=self.z_dim, kernel_size=(1, 1), strides=(1, 1), padding='valid',
-                                use_bias=False, kernel_initializer=self.w_init())
+                                            use_bias=False, kernel_initializer=self.w_init())
                     h_mu = add_nontied_bias(h_mu)
                     self.G_z_mu = h_mu
                 with tf.variable_scope('sigma'):
@@ -147,7 +148,8 @@ class ALI(uabMakeNetwork_DCGAN.DCGAN):
                     h_sigma = tf.exp(h_sigma)
                 rng = tf.random_normal(shape=tf.shape(h_mu))
                 output = (rng * h_sigma) + h_mu
-        return output
+        self.encoded = tf.nn.tanh(output)
+        return output #tf.nn.tanh(output)
 
     def discriminator(self, input_x, input_z, train=True, reuse=False):
         with tf.variable_scope('discriminator', reuse=reuse):
@@ -326,14 +328,14 @@ class ALI(uabMakeNetwork_DCGAN.DCGAN):
     def test(self, x_name, sess, test_iterator):
         result = []
         for X_batch in test_iterator:
-            pred = sess.run(self.G_z, feed_dict={self.inputs[x_name]: X_batch,
-                                                 self.train_d: False, self.train_g: False})
+            pred = sess.run(self.encoded, feed_dict={self.inputs[x_name]: X_batch,
+                                                     self.train_d: False, self.train_g: False})
             result.append(pred[:, 0, 0, :])
         result = np.vstack(result)
         return result
 
     def encoding(self, x_name, sess, test_iterator):
         for X_batch in test_iterator:
-            pred = sess.run(self.G_z, feed_dict={self.inputs[x_name]: X_batch,
-                                                 self.train_d: False, self.train_g: False})
+            pred = sess.run(self.encoded, feed_dict={self.inputs[x_name]: X_batch,
+                                                     self.train_d: False, self.train_g: False})
             yield pred[0, 0, 0, :]
