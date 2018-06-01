@@ -295,6 +295,67 @@ class ImageLabelReader_City(object):
                     yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1], cityid_batch
 
 
+class ImageLabelReaderCitySampleControl(ImageLabelReader):
+    def __init__(self, gtInds, dataInds, parentDir, chipFiles, chip_size, batchSize, city_dict, city_alpha,
+                 nChannels=1, padding=np.array((0, 0)), block_mean=None, dataAug=''):
+        self.city_dict = city_dict
+        self.city_alpha = city_alpha
+        super(ImageLabelReaderCitySampleControl, self).__init__(gtInds, dataInds, parentDir, chipFiles, chip_size,
+                                                                   batchSize, nChannels, padding, block_mean, dataAug)
+
+    def get_group_city_sorted_alpha(self, group):
+        alpha = []
+        for i in range(len(group)):
+            city_name = ''.join([c for c in group[i][0][0].split('_')[0] if not c.isdigit()])
+            alpha.append(self.city_alpha[self.city_dict[city_name]])
+        return alpha
+
+    def readFromDiskIteratorTrain(self, image_dir, chipFiles, batch_size, patch_size, padding=(0, 0),
+                                  dataAug=''):
+        # this is a iterator for training
+        tile_num, patch_per_tile, tile_name = get_tile_and_patch_num(chipFiles)
+        group = group_by_city_name(tile_name, chipFiles)
+        assert len(group) == len(self.city_alpha)
+        alpha = self.get_group_city_sorted_alpha(group)
+        random_id = [np.random.permutation(len(group[i])) for i in range(len(group))]
+        group_cnt = [0 for i in range(len(group))]
+
+        nDims = len(chipFiles[0])
+        while True:
+            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
+            # select number to sample
+            city_batch = np.random.choice(len(group), batch_size, p=alpha)
+            for cnt, randInd in enumerate(city_batch):
+                patchInd = random_id[randInd][group_cnt[randInd] % len(group[randInd])]
+                group_cnt[randInd] += 1
+                row = group[randInd][patchInd]
+                blockList = []
+                nDims = 0
+                for file in row:
+                    img = util_functions.uabUtilAllTypeLoad(os.path.join(image_dir, file))
+                    if len(img.shape) == 2:
+                        img = np.expand_dims(img, axis=2)
+                    nDims += img.shape[2]
+                    blockList.append(img)
+                block = np.dstack(blockList).astype(np.float32)
+
+                if self.block_mean is not None:
+                    block -= self.block_mean
+
+                if dataAug != '':
+                    augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True, img_mean=self.block_mean)
+                else:
+                    augDat = block
+
+                if (np.array(padding) > 0).any():
+                    augDat = uabUtilreader.pad_block(augDat, padding)
+
+                image_batch[cnt % batch_size, :, :, :] = augDat
+
+                if ((cnt + 1) % batch_size == 0):
+                    yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1]
+
+
 # for debugging purposes
 if __name__ == '__main__':
     import uab_collectionFunctions
@@ -303,12 +364,12 @@ if __name__ == '__main__':
     import uabCrossValMaker
 
     city_dict = {'austin':0, 'chicago':1, 'kitsap':2, 'tyrol-w':3, 'vienna':4}
+    city_alpha = [0.5, 0.2, 0.1, 0.1, 0.1]
 
     # create collection
     # the original file is in /ei-edl01/data/uab_datasets/inria
     blCol = uab_collectionFunctions.uabCollection('inria')
     img_mean = blCol.getChannelMeans([0, 1, 2])
-    print(img_mean)
 
     # extract patches
     extrObj = uab_DataHandlerFunctions.uabPatchExtr([0, 1, 2, 4],  # extract all 4 channels
@@ -330,8 +391,8 @@ if __name__ == '__main__':
     file_list_train = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(6, 37)])
     file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(0, 6)])
 
-    dataReader_train = ImageLabelReader([3], [0, 1, 2], patchDir, file_list, (321, 321),
-                                             5, block_mean=np.append([0], img_mean))
+    dataReader_train = ImageLabelReaderCitySampleControl([3], [0, 1, 2], patchDir, file_list, (321, 321),
+                                                         5, city_dict, city_alpha, block_mean=np.append([0], img_mean))
 
     for plt_cnt in range(10):
         x, y = dataReader_train.readerAction()
