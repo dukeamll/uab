@@ -2,18 +2,17 @@
 """
 Created on Mon Nov 06 17:55:23 2017
 
-@author: Daniel
+@author: Daniel, Bohao, Boning
 
 some globally utile functions
 """
 
 import os
-import time
 from sys import platform
 from math import factorial
 import imageio
 import numpy as np
-import tensorflow as tf
+import pandas as pd
 
 sl = os.path.sep
 
