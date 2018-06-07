@@ -1,16 +1,15 @@
 import os
-import re
 import time
 import imageio
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.ops import array_ops
 import util_functions
 import uabUtilreader
 import uabDataReader
 import uabRepoPaths
 from bohaoCustom import uabMakeNetwork_UNet
 from bohaoCustom import uabMakeNetwork as network
+
 
 class UnetModelMTL(uabMakeNetwork_UNet.UnetModelCrop):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
@@ -103,15 +102,26 @@ class UnetModelMTL(uabMakeNetwork_UNet.UnetModelCrop):
         # TODO calculate the padding pixels
         return 184
 
+    def make_learning_rate(self, n_train):
+        if not type(self.lr) is list:
+            self.lr = [self.lr for i in range(1 + self.source_num)]
+        self.learning_rate = []
+        for lr in self.lr:
+            self.learning_rate.append(tf.train.exponential_decay(lr, self.global_step,
+                                                                 tf.cast(n_train * np.sum(self.source_control) * 2 /
+                                                                         self.bs * self.ds, tf.int32),
+                                                                 self.dr, staircase=True))
+
     def make_optimizer(self, train_var_filter=None):
         with tf.control_dependencies(self.update_ops):
             t_vars = tf.trainable_variables()
             for cnt, s_name in enumerate(self.source_name):
-                var_list = [var for var in t_vars if 'Encoder' in var.name] + \
-                           [var for var in t_vars if 'Decoder_{}'.format(s_name) in var.name]
-                self.optimizer.append(tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss[cnt],
-                                                                                          global_step=self.global_step,
-                                                                                          var_list=var_list))
+                var_list = [var for var in t_vars if 'Encoder' in var.name]
+                self.optimizer.append(tf.train.AdamOptimizer(self.learning_rate[0]).minimize(
+                    self.loss[cnt], global_step=self.global_step, var_list=var_list))
+                var_list = [var for var in t_vars if 'Decoder_{}'.format(s_name) in var.name]
+                self.optimizer.append(tf.train.AdamOptimizer(self.learning_rate[cnt + 1]).minimize(
+                    self.loss[cnt], global_step=self.global_step, var_list=var_list))
 
     def make_update_ops(self, x_name, y_name):
         tf.add_to_collection('inputs', self.inputs[x_name])
@@ -125,7 +135,8 @@ class UnetModelMTL(uabMakeNetwork_UNet.UnetModelCrop):
             tf.summary.histogram('Predicted Prob', tf.argmax(tf.nn.softmax(self.pred), 1))
         for cnt, s in enumerate(self.source_name):
             tf.summary.scalar('Cross Entropy {}'.format(s), self.loss[cnt])
-            tf.summary.scalar('learning rate {}'.format(s), self.learning_rate)
+            tf.summary.scalar('learning rate decoder {}'.format(s), self.learning_rate[cnt + 1])
+        tf.summary.scalar('learning rate encoder', self.learning_rate[0])
         self.summary = tf.summary.merge_all()
 
     def train(self, x_name, y_name, n_train, sess, summary_writer, n_valid=1000,
@@ -161,10 +172,9 @@ class UnetModelMTL(uabMakeNetwork_UNet.UnetModelCrop):
                 for s in range(self.source_num):
                     for train_iter in range(self.source_control[s]):
                         X_batch, y_batch = train_reader[s].readerAction(sess)
-                        _, self.global_step_value = sess.run([self.optimizer[s], self.global_step],
-                                                             feed_dict={self.inputs[x_name]:X_batch,
-                                                                        self.inputs[y_name]:y_batch,
-                                                                        self.trainable: True})
+                        _, _, self.global_step_value = sess.run(
+                            [self.optimizer[s*2], self.optimizer[s*2 + 1], self.global_step],
+                            feed_dict={self.inputs[x_name]:X_batch, self.inputs[y_name]:y_batch, self.trainable: True})
                         if step % verb_step == 0:
                             pred_train, step_cross_entropy, step_summary = sess.run(
                                 [self.pred[s], self.loss[s], self.summary],

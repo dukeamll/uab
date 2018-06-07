@@ -355,6 +355,121 @@ class ImageLabelReaderCitySampleControl(ImageLabelReader):
                 if ((cnt + 1) % batch_size == 0):
                     yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1]
 
+class ImageLabelReaderGroupSampleControl(ImageLabelReader):
+    def __init__(self, gtInds, dataInds, parentDir, chipFiles, chip_size, batchSize,
+                 group_alpha, group_files,
+                 nChannels=1, padding=np.array((0, 0)), block_mean=None, dataAug=''):
+        self.group_alpha = group_alpha
+        self.group_files = group_files
+        super(ImageLabelReaderGroupSampleControl, self).__init__(gtInds, dataInds, parentDir, chipFiles,
+                                                                chip_size,
+                                                                batchSize, nChannels, padding,
+                                                                block_mean, dataAug)
+
+    def group_chip_files(self, chipFiles):
+        group_num = len(self.group_files)
+        group = [[] for i in range(group_num)]
+        for item in chipFiles:
+            name_id = item[0].split('_')[0]
+            for i in range(group_num):
+                if name_id in self.group_files[i]:
+                    group[i].append(item)
+                    break
+        return group
+
+    def readFromDiskIteratorTrain(self, image_dir, chipFiles, batch_size, patch_size, padding=(0, 0),
+                                  dataAug=''):
+        # this is a iterator for training
+        group = self.group_chip_files(chipFiles)
+        assert len(group) == len(self.group_alpha)
+        random_id = [np.random.permutation(len(group[i])) for i in range(len(group))]
+        group_cnt = [0 for i in range(len(group))]
+
+        nDims = len(chipFiles[0])
+        while True:
+            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
+            # select number to sample
+            city_batch = np.random.choice(len(group), batch_size, p=self.group_alpha)
+            for cnt, randInd in enumerate(city_batch):
+                patchInd = random_id[randInd][group_cnt[randInd] % len(group[randInd])]
+                group_cnt[randInd] += 1
+                row = group[randInd][patchInd]
+                blockList = []
+                nDims = 0
+                for file in row:
+                    img = util_functions.uabUtilAllTypeLoad(os.path.join(image_dir, file))
+                    if len(img.shape) == 2:
+                        img = np.expand_dims(img, axis=2)
+                    nDims += img.shape[2]
+                    blockList.append(img)
+                block = np.dstack(blockList).astype(np.float32)
+
+                if self.block_mean is not None:
+                    block -= self.block_mean
+
+                if dataAug != '':
+                    augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True,
+                                                     img_mean=self.block_mean)
+                else:
+                    augDat = block
+
+                if (np.array(padding) > 0).any():
+                    augDat = uabUtilreader.pad_block(augDat, padding)
+
+                image_batch[cnt % batch_size, :, :, :] = augDat
+
+                if ((cnt + 1) % batch_size == 0):
+                    yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1]
+
+class ImageLabelReaderPatchSampleControl(ImageLabelReader):
+    def __init__(self, gtInds, dataInds, parentDir, chipFiles, chip_size, batchSize,
+                 patch_prob,
+                 nChannels=1, padding=np.array((0, 0)), block_mean=None, dataAug=''):
+        self.patch_prob = patch_prob
+        super(ImageLabelReaderPatchSampleControl, self).__init__(gtInds, dataInds, parentDir, chipFiles,
+                                                                 chip_size,
+                                                                 batchSize, nChannels, padding,
+                                                                 block_mean, dataAug)
+
+    def readFromDiskIteratorTrain(self, image_dir, chipFiles, batch_size, patch_size, padding=(0, 0),
+                                  dataAug=''):
+        # this is a iterator for training
+        nDims = len(chipFiles[0])
+        assert len(chipFiles) == len(self.patch_prob)
+        while True:
+            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
+            # select number to sample
+            idx_batch = np.random.choice(len(chipFiles), batch_size, p=self.patch_prob)
+            for cnt, randInd in enumerate(idx_batch):
+                row = chipFiles[randInd]
+
+                blockList = []
+                nDims = 0
+                for file in row:
+                    img = util_functions.uabUtilAllTypeLoad(os.path.join(image_dir, file))
+                    if len(img.shape) == 2:
+                        img = np.expand_dims(img, axis=2)
+                    nDims += img.shape[2]
+                    blockList.append(img)
+                block = np.dstack(blockList).astype(np.float32)
+
+                if self.block_mean is not None:
+                    block -= self.block_mean
+
+                if dataAug != '':
+                    augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True,
+                                                     img_mean=self.block_mean)
+                else:
+                    augDat = block
+
+                if (np.array(padding) > 0).any():
+                    augDat = uabUtilreader.pad_block(augDat, padding)
+
+                image_batch[cnt % batch_size, :, :, :] = augDat
+
+                if ((cnt + 1) % batch_size == 0):
+                    yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1]
+
 
 # for debugging purposes
 if __name__ == '__main__':
@@ -363,8 +478,7 @@ if __name__ == '__main__':
     import uab_DataHandlerFunctions
     import uabCrossValMaker
 
-    city_dict = {'austin':0, 'chicago':1, 'kitsap':2, 'tyrol-w':3, 'vienna':4}
-    city_alpha = [0.5, 0.2, 0.1, 0.1, 0.1]
+    patch_prob = np.load('/media/ei-edl01/user/bh163/tasks/2018.06.01.domain_selection/patch_prob.npy')
 
     # create collection
     # the original file is in /ei-edl01/data/uab_datasets/inria
@@ -385,16 +499,16 @@ if __name__ == '__main__':
     # make data reader
     chipFiles = os.path.join(patchDir, 'fileList.txt')
     # use uabCrossValMaker to get fileLists for training and validation
-    idx, file_list = uabCrossValMaker.uabUtilGetFolds(r'/media/ei-edl01/user/bh163/tasks/2018.03.02.res_gan',
-                                                      'deeplab_inria_cp_0.txt', 'force_tile')
+    idx, file_list = uabCrossValMaker.uabUtilGetFolds(patchDir, 'fileList.txt', 'force_tile')
     # use first 5 tiles for validation
     file_list_train = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(6, 37)])
     file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(0, 6)])
 
-    dataReader_train = ImageLabelReaderCitySampleControl([3], [0, 1, 2], patchDir, file_list, (321, 321),
-                                                         5, city_dict, city_alpha, block_mean=np.append([0], img_mean))
+    dataReader_train = ImageLabelReaderPatchSampleControl([3], [0, 1, 2], patchDir, file_list_train, (321, 321),
+                                                          5, patch_prob,
+                                                          block_mean=np.append([0], img_mean))
 
-    for plt_cnt in range(10):
+    '''for plt_cnt in range(10):
         x, y = dataReader_train.readerAction()
         import matplotlib.pyplot as plt
         for i in range(5):
@@ -402,4 +516,12 @@ if __name__ == '__main__':
             plt.imshow((x[i, :, :, :]+img_mean).astype(np.uint8))
             plt.subplot(5, 2, i*2+1+1)
             plt.imshow(y[i, :, :, 0])
-        plt.show()
+        plt.show()'''
+
+    idx_all = np.zeros(50000)
+    for plt_cnt in range(10000):
+        _, _, idx = dataReader_train.readerAction()
+        idx_all[plt_cnt*5:(plt_cnt+1)*5] = idx
+    import matplotlib.pyplot as plt
+    plt.hist(idx_all)
+    plt.show()
