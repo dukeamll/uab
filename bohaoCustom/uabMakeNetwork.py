@@ -42,7 +42,7 @@ class Network(object):
         else:
             self.ckdir = os.path.join(ckdir, par_dir, dir_name)
 
-    def load(self, model_path, sess, saver=None, epoch=None, best_model=True):
+    def load(self, model_path, sess, saver=None, epoch=None, best_model=False):
         # this can only be called after create_graph()
         # loads all weights in a graph
         if saver is None:
@@ -59,13 +59,15 @@ class Network(object):
                         latest_check_point = tf.train.latest_checkpoint(model_path)
                         saver.restore(sess, latest_check_point)
                         print('loaded {}'.format(latest_check_point))
-                    except tf.errors.NotFoundError:
+                    except (tf.errors.NotFoundError, ValueError):
                         with open(os.path.join(model_path, 'checkpoint'), 'r') as f:
                             ckpts = f.readlines()
                         ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
                         latest_check_point = os.path.join(model_path, ckpt_file_name)
+                        print(latest_check_point)
                         saver.restore(sess, latest_check_point)
                         print('loaded {}'.format(latest_check_point))
+
             else:
                 ckpt_file_name = glob(os.path.join(model_path, 'model_{}.ckpt*.index'.format(epoch)))
                 ckpt_file_name = ckpt_file_name[0][:-6]

@@ -218,9 +218,9 @@ class UnetModelMTL(uabMakeNetwork_UNet.UnetModelCrop):
                                                                                 img_mean[s])})
                     summary_writer.add_summary(valid_image_summary, epoch)
 
-                if epoch % save_epoch == 0:
-                    saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
-                    saver.save(sess, '{}/model_{}.ckpt'.format(self.ckdir, epoch), global_step=self.global_step)
+            if epoch % save_epoch == 0:
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                saver.save(sess, '{}/model_{}.ckpt'.format(self.ckdir, epoch), global_step=self.global_step)
 
     def test(self, x_name, sess, test_iterator, s_id):
         result = []
