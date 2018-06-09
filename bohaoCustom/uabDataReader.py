@@ -423,9 +423,10 @@ class ImageLabelReaderGroupSampleControl(ImageLabelReader):
 
 class ImageLabelReaderPatchSampleControl(ImageLabelReader):
     def __init__(self, gtInds, dataInds, parentDir, chipFiles, chip_size, batchSize,
-                 patch_prob,
+                 patch_prob, patch_name=False,
                  nChannels=1, padding=np.array((0, 0)), block_mean=None, dataAug=''):
         self.patch_prob = patch_prob
+        self.return_name = patch_name
         super(ImageLabelReaderPatchSampleControl, self).__init__(gtInds, dataInds, parentDir, chipFiles,
                                                                  chip_size,
                                                                  batchSize, nChannels, padding,
@@ -438,10 +439,12 @@ class ImageLabelReaderPatchSampleControl(ImageLabelReader):
         assert len(chipFiles) == len(self.patch_prob)
         while True:
             image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
+            patch_name = [[] for i in range(batch_size)]
             # select number to sample
             idx_batch = np.random.choice(len(chipFiles), batch_size, p=self.patch_prob)
             for cnt, randInd in enumerate(idx_batch):
                 row = chipFiles[randInd]
+                p_name = '_'.join(row[0].split('_')[:2])
 
                 blockList = []
                 nDims = 0
@@ -465,10 +468,15 @@ class ImageLabelReaderPatchSampleControl(ImageLabelReader):
                 if (np.array(padding) > 0).any():
                     augDat = uabUtilreader.pad_block(augDat, padding)
 
-                image_batch[cnt % batch_size, :, :, :] = augDat
+                store_idx = cnt % batch_size
+                image_batch[store_idx, :, :, :] = augDat
+                patch_name[store_idx] = p_name
 
-                if ((cnt + 1) % batch_size == 0):
-                    yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1]
+                if (cnt + 1) % batch_size == 0:
+                    if self.return_name:
+                        yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1], patch_name
+                    else:
+                        yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1]
 
 
 # for debugging purposes
@@ -478,7 +486,7 @@ if __name__ == '__main__':
     import uab_DataHandlerFunctions
     import uabCrossValMaker
 
-    patch_prob = np.load('/media/ei-edl01/user/bh163/tasks/2018.06.01.domain_selection/patch_prob.npy')
+    patch_prob = np.load('/media/ei-edl01/user/bh163/tasks/2018.06.01.domain_selection/patch_prob_austin.npy')
 
     # create collection
     # the original file is in /ei-edl01/data/uab_datasets/inria
@@ -505,8 +513,12 @@ if __name__ == '__main__':
     file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(0, 6)])
 
     dataReader_train = ImageLabelReaderPatchSampleControl([3], [0, 1, 2], patchDir, file_list_train, (321, 321),
-                                                          5, patch_prob,
+                                                          5, patch_prob, patch_name=True,
                                                           block_mean=np.append([0], img_mean))
+    _, _, patch_name = dataReader_train.readerAction()
+    print(patch_name)
+    _, _, patch_name = dataReader_train.readerAction()
+    print(patch_name)
 
     '''for plt_cnt in range(10):
         x, y = dataReader_train.readerAction()
@@ -518,10 +530,10 @@ if __name__ == '__main__':
             plt.imshow(y[i, :, :, 0])
         plt.show()'''
 
-    idx_all = np.zeros(50000)
+    '''idx_all = np.zeros(50000)
     for plt_cnt in range(10000):
         _, _, idx = dataReader_train.readerAction()
         idx_all[plt_cnt*5:(plt_cnt+1)*5] = idx
     import matplotlib.pyplot as plt
     plt.hist(idx_all)
-    plt.show()
+    plt.show()'''

@@ -64,7 +64,6 @@ class Network(object):
                             ckpts = f.readlines()
                         ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
                         latest_check_point = os.path.join(model_path, ckpt_file_name)
-                        print(latest_check_point)
                         saver.restore(sess, latest_check_point)
                         print('loaded {}'.format(latest_check_point))
 

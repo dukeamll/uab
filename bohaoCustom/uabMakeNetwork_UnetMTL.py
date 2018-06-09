@@ -98,6 +98,18 @@ class UnetModelMTL(uabMakeNetwork_UNet.UnetModelCrop):
                 self.loss.append(tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
                     logits=prediction, labels=gt)))
 
+    def make_ckdir(self, ckdir, patch_size, par_dir=None):
+        if type(patch_size) is list:
+            patch_size = patch_size[0]
+        # make unique directory for save
+        dir_name = '{}_PS{}_BS{}_EP{}_LR{}_DS{}_DR{}_SFN{}'.\
+            format(self.model_name, patch_size, self.bs, self.epochs, ','.join([str(lr) for lr in self.lr]),
+                   self.ds, self.dr, self.sfn)
+        if par_dir is None:
+            self.ckdir = os.path.join(ckdir, dir_name)
+        else:
+            self.ckdir = os.path.join(ckdir, par_dir, dir_name)
+
     def get_overlap(self):
         # TODO calculate the padding pixels
         return 184
