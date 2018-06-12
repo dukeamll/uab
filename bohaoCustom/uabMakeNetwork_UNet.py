@@ -196,7 +196,7 @@ class UnetModel(network.Network):
         self.make_optimizer(train_var_filter)
         self.make_ckdir(ckdir, patch_size, par_dir)
         self.make_summary(hist)
-        self.config = tf.ConfigProto()
+        self.config = tf.ConfigProto(allow_soft_placement=True)
         self.n_train = n_train
         self.n_valid = n_valid
 
@@ -332,7 +332,9 @@ class UnetModel(network.Network):
                     coord.join(threads)
                     saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)
         else:
-            with tf.Session() as sess:
+            if self.config is None:
+                self.config = tf.ConfigProto(allow_soft_placement=True)
+            with tf.Session(config=self.config) as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
                 self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
@@ -449,6 +451,7 @@ class UnetModelCrop(UnetModel):
         self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
                                                             input_size[1] * 3, 3], name='validation_images')
         self.update_ops = None
+        self.config = None
 
     def create_graph(self, x_name, class_num, start_filter_num=32):
         self.class_num = class_num
@@ -516,16 +519,6 @@ class UnetModelCrop(UnetModel):
                 per_entry_cross_ent = - kwargs['alpha'] * (pos_p_sub ** kwargs['gamma']) * tf.log(tf.clip_by_value(
                     sigmoid_p, 1e-8, 1.0)) - (1- kwargs['alpha']) * (neg_p_sub ** kwargs['gamma']) * tf.log(
                     tf.clip_by_value(1.0 - sigmoid_p, 1e-8, 1.0))
-                '''gt = tf.one_hot(gt, depth=2, dtype=tf.float32)
-                p_t = tf.nn.sigmoid(prediction)
-                zeros = array_ops.zeros_like(gt, dtype=gt.dtype)
-                ones = array_ops.ones_like(p_t, dtype=p_t.dtype)
-                p_t = array_ops.where(gt == zeros, ones-p_t, p_t)
-                alpha = array_ops.where(gt == zeros, (1-kwargs['alpha'])*array_ops.ones_like(p_t, dtype=p_t.dtype),
-                                        kwargs['alpha'] * array_ops.ones_like(p_t, dtype=p_t.dtype))
-                # clip is necessary otherwise log(0) will generate nan
-                per_entry_cross_ent = - alpha * (1-p_t)**kwargs['gamma'] * tf.log(tf.clip_by_value(
-                    p_t, 1e-8, 1.0))'''
                 self.loss = tf.reduce_sum(per_entry_cross_ent)
 
     def load_weights_append_first_layer(self, ckpt_dir, layers2load, conv1_weight, check_weight=False):
@@ -603,8 +596,10 @@ class UnetModelCrop(UnetModel):
                     coord.join(threads)
                     saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)
         else:
+            if self.config is None:
+                self.config = tf.ConfigProto(allow_soft_placement=True)
             pad = self.get_overlap()
-            with tf.Session() as sess:
+            with tf.Session(config=self.config) as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
                 self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
@@ -617,6 +612,79 @@ class UnetModelCrop(UnetModel):
                                                           [patch_size[0] - pad, patch_size[1] - pad],
                                                           overlap=pad)
             return util_functions.get_pred_labels(image_pred) * truth_val
+
+
+class UnetModelCropSplit(UnetModelCrop):
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
+                 learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
+                 batch_size=5, start_filter_num=32):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.name = 'UnetCropSplit'
+        self.model_name = self.get_unique_name(model_name)
+        self.sfn = start_filter_num
+        self.learning_rate = None
+        self.valid_cross_entropy = tf.placeholder(tf.float32, [])
+        self.valid_iou = tf.placeholder(tf.float32, [])
+        self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
+                                                            input_size[1] * 3, 3], name='validation_images')
+        self.update_ops = None
+        self.config = None
+
+    def create_graph(self, x_name, class_num, start_filter_num=64):
+        self.class_num = class_num
+        sfn = self.sfn
+
+        # downsample
+        with tf.device("/gpu:0"):
+            conv1, pool1 = self.conv_conv_pool(self.inputs[x_name], [sfn, sfn], self.trainable, name='conv1',
+                                               padding='valid', dropout=self.dropout_rate)
+            conv2, pool2 = self.conv_conv_pool(pool1, [sfn*2, sfn*2], self.trainable, name='conv2',
+                                               padding='valid', dropout=self.dropout_rate)
+            conv3, pool3 = self.conv_conv_pool(pool2, [sfn*4, sfn*4], self.trainable, name='conv3',
+                                               padding='valid', dropout=self.dropout_rate)
+            conv4, pool4 = self.conv_conv_pool(pool3, [sfn*8, sfn*8], self.trainable, name='conv4',
+                                               padding='valid', dropout=self.dropout_rate)
+            self.encoding = self.conv_conv_pool(pool4, [sfn*16, sfn*16], self.trainable, name='conv5', pool=False,
+                                        padding='valid', dropout=self.dropout_rate)
+
+        # upsample
+        with tf.device("/gpu:1"):
+            up6 = self.crop_upsample_concat(self.encoding, conv4, 8, name='6')
+            conv6 = self.conv_conv_pool(up6, [sfn*8, sfn*8], self.trainable, name='up6', pool=False,
+                                        padding='valid', dropout=self.dropout_rate)
+            up7 = self.crop_upsample_concat(conv6, conv3, 32, name='7')
+            conv7 = self.conv_conv_pool(up7, [sfn*4, sfn*4], self.trainable, name='up7', pool=False,
+                                        padding='valid', dropout=self.dropout_rate)
+            up8 = self.crop_upsample_concat(conv7, conv2, 80, name='8')
+            conv8 = self.conv_conv_pool(up8, [sfn*2, sfn*2], self.trainable, name='up8', pool=False,
+                                        padding='valid', dropout=self.dropout_rate)
+            up9 = self.crop_upsample_concat(conv8, conv1, 176, name='9')
+            conv9 = self.conv_conv_pool(up9, [sfn, sfn], self.trainable, name='up9', pool=False,
+                                        padding='valid', dropout=self.dropout_rate)
+
+            self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
+            self.output = tf.nn.softmax(self.pred)
+
+    def make_optimizer(self, train_var_filter):
+        with tf.control_dependencies(self.update_ops):
+            if train_var_filter is None:
+                self.optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss,
+                                                                                     global_step=self.global_step,
+                                                                                     colocate_gradients_with_ops=True)
+            else:
+                print('Train parameters in scope:')
+                for layer in train_var_filter:
+                    print(layer)
+                train_vars = tf.trainable_variables()
+                var_list = []
+                for var in train_vars:
+                    if var.name.split('/')[0] in train_var_filter:
+                        var_list.append(var)
+                self.optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss,
+                                                                                     global_step=self.global_step,
+                                                                                     var_list=var_list,
+                                                                                     colocate_gradients_with_ops=True)
 
 
 class UnetModelMoreCrop(UnetModelCrop):

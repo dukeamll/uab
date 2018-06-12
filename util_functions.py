@@ -13,6 +13,7 @@ from math import factorial
 import imageio
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 sl = os.path.sep
 
@@ -269,6 +270,15 @@ def savitzky_golay(y, window_size, order, deriv=0, rate=1):
     y = np.concatenate((firstvals, y, lastvals))
     return np.convolve(m[::-1], y, mode='valid')
 
+
+def get_default_colors():
+    """
+    Get plt default colors
+    :return: a list of rgb colors
+    """
+    prop_cycle = plt.rcParams['axes.prop_cycle']
+    colors = prop_cycle.by_key()['color']
+    return colors
 
 ##-------------------------
 # for post proc
