@@ -534,6 +534,63 @@ class ImageLabelReaderBuilding(ImageLabelReader):
                     yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1], building_truth
 
 
+class ImageLabelReaderBuildingCustom(ImageLabelReader):
+    def __init__(self, gtInds, dataInds, parentDir, chipFiles, chip_size, batchSize, patch_prob, percent_file,
+                 nChannels=1, padding=np.array((0, 0)), block_mean=None, dataAug=''):
+        self.percent = np.load(percent_file)
+        self.patch_prob = patch_prob
+        super(ImageLabelReaderBuildingCustom, self).__init__(gtInds, dataInds, parentDir,
+                                                       chipFiles,
+                                                       chip_size,
+                                                       batchSize, nChannels, padding,
+                                                       block_mean, dataAug)
+
+    def readFromDiskIteratorTrain(self, image_dir, chipFiles, batch_size, patch_size,
+                                  padding=(0, 0), dataAug=''):
+        # this is a iterator for training
+        nDims = len(chipFiles[0])
+        while True:
+            image_batch = np.zeros((batch_size, patch_size[0], patch_size[1], nDims))
+            building_truth = np.zeros((batch_size, 1))
+            # select number to sample
+            idx_batch = np.random.permutation(len(chipFiles))
+            assert len(chipFiles) == self.percent.shape[0]
+            for cnt, randInd in enumerate(idx_batch):
+                row = chipFiles[randInd]
+
+                blockList = []
+                nDims = 0
+                for file in row:
+                    img = util_functions.uabUtilAllTypeLoad(os.path.join(image_dir, file))
+                    if len(img.shape) == 2:
+                        img = np.expand_dims(img, axis=2)
+                    nDims += img.shape[2]
+                    blockList.append(img)
+                block = np.dstack(blockList).astype(np.float32)
+
+                if self.block_mean is not None:
+                    block -= self.block_mean
+
+                if dataAug != '':
+                    augDat = uabUtilreader.doDataAug(block, nDims, dataAug, is_np=True,
+                                                     img_mean=self.block_mean)
+                else:
+                    augDat = block
+
+                if (np.array(padding) > 0).any():
+                    augDat = uabUtilreader.pad_block(augDat, padding)
+
+                store_idx = cnt % batch_size
+                image_batch[store_idx, :, :, :] = augDat
+                if self.percent[randInd] > self.patch_prob:
+                    building_truth[store_idx, :] = 1
+                else:
+                    building_truth[store_idx, :] = 0
+
+                if (cnt + 1) % batch_size == 0:
+                    yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1], building_truth
+
+
 # for debugging purposes
 if __name__ == '__main__':
     import uab_collectionFunctions
@@ -560,13 +617,15 @@ if __name__ == '__main__':
     # make data reader
     chipFiles = os.path.join(patchDir, 'fileList.txt')
     # use uabCrossValMaker to get fileLists for training and validation
-    idx, file_list = uabCrossValMaker.uabUtilGetFolds(patchDir, 'fileList.txt', 'force_tile')
+    idx, file_list = uabCrossValMaker.uabUtilGetFolds(patchDir, 'fileList.txt', 'city')
     # use first 5 tiles for validation
-    file_list_train = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(6, 37)])
-    file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(0, 6)])
+    # file_list_train = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(6, 37)])
+    # file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(0, 6)])
+    file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [0])
 
-    dataReader_train = ImageLabelReaderBuilding([3], [0, 1, 2], patchDir, file_list_train, (321, 321),
-                                                5, 0.1, block_mean=np.append([0], img_mean))
+    percent_file = r'/media/ei-edl01/user/bh163/tasks/2018.06.01.domain_selection/deeplab_austin_building_record.npy'
+    dataReader_train = ImageLabelReaderBuildingCustom([3], [0, 1, 2], patchDir, file_list_valid, (321, 321),
+                                                      5, 0.1, percent_file, block_mean=np.append([0], img_mean))
 
     for plt_cnt in range(10):
         x, y, b = dataReader_train.readerAction()
