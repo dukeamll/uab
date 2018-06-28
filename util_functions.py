@@ -271,6 +271,21 @@ def savitzky_golay(y, window_size, order, deriv=0, rate=1):
     return np.convolve(m[::-1], y, mode='valid')
 
 
+def crop_center(img, cropx, cropy):
+    if len(img.shape) == 3:
+        y, x,  _ = img.shape
+        start_x = x // 2 - (cropx // 2)
+        start_y = y // 2 - (cropy // 2)
+        return img[start_x: start_y + cropy, start_x : start_y + cropx, :]
+    elif len(img.shape) == 2:
+        y, x = img.shape
+        start_x = x // 2 - (cropx // 2)
+        start_y = y // 2 - (cropy // 2)
+        return img[start_x: start_y + cropy, start_x: start_y + cropx]
+    else:
+        raise AssertionError
+
+
 def get_default_colors():
     """
     Get plt default colors
