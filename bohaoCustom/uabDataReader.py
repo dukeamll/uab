@@ -536,9 +536,10 @@ class ImageLabelReaderBuilding(ImageLabelReader):
 
 class ImageLabelReaderBuildingCustom(ImageLabelReader):
     def __init__(self, gtInds, dataInds, parentDir, chipFiles, chip_size, batchSize, patch_prob, percent_file,
-                 nChannels=1, padding=np.array((0, 0)), block_mean=None, dataAug=''):
+                 nChannels=1, padding=np.array((0, 0)), block_mean=None, dataAug='', binary=False):
         self.percent = np.load(percent_file)
         self.patch_prob = patch_prob
+        self.binary = binary
         super(ImageLabelReaderBuildingCustom, self).__init__(gtInds, dataInds, parentDir,
                                                        chipFiles,
                                                        chip_size,
@@ -554,6 +555,7 @@ class ImageLabelReaderBuildingCustom(ImageLabelReader):
             building_truth = np.zeros((batch_size, 1))
             # select number to sample
             idx_batch = np.random.permutation(len(chipFiles))
+
             assert len(chipFiles) == self.percent.shape[0]
             for cnt, randInd in enumerate(idx_batch):
                 row = chipFiles[randInd]
@@ -582,10 +584,13 @@ class ImageLabelReaderBuildingCustom(ImageLabelReader):
 
                 store_idx = cnt % batch_size
                 image_batch[store_idx, :, :, :] = augDat
-                if self.percent[randInd] > self.patch_prob:
-                    building_truth[store_idx, :] = 1
+                if self.binary:
+                    building_truth[store_idx, :] = self.percent[randInd]
                 else:
-                    building_truth[store_idx, :] = 0
+                    if self.percent[randInd] > self.patch_prob:
+                        building_truth[store_idx, :] = 1
+                    else:
+                        building_truth[store_idx, :] = 0
 
                 if (cnt + 1) % batch_size == 0:
                     yield image_batch[:, :, :, 1:], image_batch[:, :, :, :1], building_truth
@@ -605,13 +610,13 @@ if __name__ == '__main__':
 
     # extract patches
     extrObj = uab_DataHandlerFunctions.uabPatchExtr([0, 1, 2, 4],  # extract all 4 channels
-                                                    cSize=(321, 321),  # patch size as 572*572
-                                                    numPixOverlap=0,  # overlap as 92
+                                                    cSize=(572, 572),  # patch size as 572*572
+                                                    numPixOverlap=184,  # overlap as 92
                                                     extSave=['jpg', 'jpg', 'jpg', 'png'],
                                                     # save rgb files as jpg and gt as png
                                                     isTrain=True,
                                                     gtInd=3,
-                                                    pad=0)  # pad around the tiles
+                                                    pad=92)  # pad around the tiles
     patchDir = extrObj.run(blCol)
 
     # make data reader
@@ -623,9 +628,9 @@ if __name__ == '__main__':
     # file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(0, 6)])
     file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [0])
 
-    percent_file = r'/media/ei-edl01/user/bh163/tasks/2018.06.01.domain_selection/deeplab_austin_building_record.npy'
-    dataReader_train = ImageLabelReaderBuildingCustom([3], [0, 1, 2], patchDir, file_list_valid, (321, 321),
-                                                      5, 0.1, percent_file, block_mean=np.append([0], img_mean))
+    percent_file = r'/media/ei-edl01/user/bh163/tasks/2018.06.28.mtl_semi_unsupervised/res50_pred_building_binary_0.npy'
+    dataReader_train = ImageLabelReaderBuildingCustom([3], [0, 1, 2], patchDir, file_list_valid, (572, 572),
+                                                      5, 0.1, percent_file, block_mean=np.append([0], img_mean), binary=True)
 
     for plt_cnt in range(10):
         x, y, b = dataReader_train.readerAction()
