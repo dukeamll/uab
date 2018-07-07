@@ -628,7 +628,7 @@ if __name__ == '__main__':
     # file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [i for i in range(0, 6)])
     file_list_valid = uabCrossValMaker.make_file_list_by_key(idx, file_list, [0])
 
-    percent_file = r'/media/ei-edl01/user/bh163/tasks/2018.06.28.mtl_semi_unsupervised/res50_pred_building_binary_0.npy'
+    percent_file = r'/media/ei-edl01/user/bh163/tasks/2018.06.28.mtl_semi_unsupervised/1iter_pred_building_binary_0.npy'
     dataReader_train = ImageLabelReaderBuildingCustom([3], [0, 1, 2], patchDir, file_list_valid, (572, 572),
                                                       5, 0.1, percent_file, block_mean=np.append([0], img_mean), binary=True)
 
