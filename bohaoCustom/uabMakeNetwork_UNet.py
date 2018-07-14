@@ -93,7 +93,7 @@ class UnetModel(network.Network):
                 ckpts = f.readlines()
             ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
             latest_check_point = os.path.join(ckpt_dir, ckpt_file_name)
-            tf.contrib.framework.init_from_checkpoint(ckpt_dir, load_dict)
+            tf.contrib.framework.init_from_checkpoint(latest_check_point, load_dict)
             print('loaded {}'.format(latest_check_point))
 
     def restore_model(self,sess):
