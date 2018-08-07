@@ -1039,7 +1039,7 @@ class UnetModelGAN(UnetModelCrop):
                      minimize(self.loss, var_list=e_vars, global_step=self.global_step)
                  e_optm = tf.train.AdamOptimizer(self.learning_rate * 0.1).\
                      minimize(self.g_loss, var_list=e_vars+d_vars, global_step=None)
-                 d_optm = tf.train.AdamOptimizer(self.learning_rate * 0.1). \
+                 d_optm = tf.train.AdamOptimizer(self.learning_rate * 0.05). \
                      minimize(self.d_loss, var_list=d_vars, global_step=None)
                  self.optimizer = [seg_optm, e_optm, d_optm]
 
