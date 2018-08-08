@@ -76,6 +76,7 @@ class Network(object):
         else:
             saver.restore(sess, model_path)
             print('loaded {}'.format(model_path))
+        sess.run(self.global_step.assign(0))
 
     def get_unique_name(self, suffix):
         if len(suffix) > 0:
