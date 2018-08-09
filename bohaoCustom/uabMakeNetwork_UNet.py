@@ -873,21 +873,43 @@ class UnetModelPredict(UnetModelCrop):
 
 
 class UnetModelGAN(UnetModelCrop):
+    @staticmethod
+    def make_list(x):
+        if type(x) is int or type(x) is float:
+            x = [x for _ in range(3)]
+        elif type(x) is list:
+            pass
+        else:
+            # try take it as a string
+            x = [float(a) for a in str(x).split(',')]
+        return x
+
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
                  batch_size=5, start_filter_num=32):
         network.Network.__init__(self, inputs, trainable, dropout_rate,
                                  learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.lr = self.make_list(learn_rate)
+        self.ds = self.make_list(decay_step)
+        self.dr = self.make_list(decay_rate)
         self.name = 'UnetGAN'
         self.model_name = self.get_unique_name(model_name)
         self.sfn = start_filter_num
         self.learning_rate = None
         self.valid_cross_entropy = tf.placeholder(tf.float32, [])
         self.valid_iou = tf.placeholder(tf.float32, [])
+        self.valid_d_loss = tf.placeholder(tf.float32, [])
+        self.valid_g_loss = tf.placeholder(tf.float32, [])
         self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
                                                             input_size[1] * 3, 3], name='validation_images')
         self.update_ops = None
         self.config = None
+        self.hard_label = None
+        self.fake_logit = None
+        self.true_logit = None
+        self.fake_logit_ = None
+        self.d_loss = None
+        self.g_loss = None
 
     def load_weights(self, ckpt_dir, layers2load, load_final_layer=False):
         # this is different from network.load()
@@ -970,11 +992,11 @@ class UnetModelGAN(UnetModelCrop):
             flat = tf.reshape(pool6, shape=[self.bs, 2 * 2 * sfn * 16])
             return self.fc_fc(flat, [100, 1], self.trainable, name='fc_final', activation=None, dropout=False)
 
-    def create_graph(self, x_name, y_name, class_num, start_filter_num=32):
+    def create_graph(self, names, class_num, start_filter_num=32):
         self.class_num = class_num
 
         with tf.variable_scope('Encoder'):
-            conv9 = self.make_encoder(x_name)
+            conv9 = self.make_encoder(names[0])
 
             self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
             self.output = tf.nn.softmax(self.pred)
@@ -982,8 +1004,8 @@ class UnetModelGAN(UnetModelCrop):
         self.hard_label = tf.cast(tf.expand_dims(tf.argmax(self.output, axis=-1, name='hard_label'), axis=-1), tf.float32)
         with tf.variable_scope('Discriminator'):
             self.fake_logit = self.make_discriminator(self.hard_label, sfn=start_filter_num//16, reuse=False)
-            _, w, h, _ = self.inputs[y_name].get_shape().as_list()
-            true_y = tf.cast(tf.image.resize_image_with_crop_or_pad(self.inputs[y_name], w - self.get_overlap(),
+            _, w, h, _ = self.inputs[names[1]].get_shape().as_list()
+            true_y = tf.cast(tf.image.resize_image_with_crop_or_pad(self.inputs[names[1]], w - self.get_overlap(),
                                                                     h - self.get_overlap()), tf.float32)
             self.true_logit = self.make_discriminator(true_y, sfn=start_filter_num//16, reuse=True)
 
@@ -1025,9 +1047,11 @@ class UnetModelGAN(UnetModelCrop):
         self.update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
     def make_learning_rate(self, n_train):
-        self.learning_rate = tf.train.exponential_decay(self.lr, self.global_step,
-                                                        tf.cast(n_train/self.bs * self.ds, tf.int32),
-                                                        self.dr, staircase=True)
+        self.learning_rate = []
+        for i in range(3):
+            self.learning_rate.append(tf.train.exponential_decay(self.lr[i], self.global_step,
+                                                                 tf.cast(n_train/self.bs * self.ds[i], tf.int32),
+                                                                 self.dr[i], staircase=True))
 
     def make_optimizer(self, train_var_filter):
         with tf.control_dependencies(self.update_ops):
@@ -1035,21 +1059,23 @@ class UnetModelGAN(UnetModelCrop):
             e_vars = [var for var in t_vars if 'Encoder' in var.name]
             d_vars = [var for var in t_vars if 'Discriminator' in var.name]
             if train_var_filter is None:
-                 seg_optm = tf.train.AdamOptimizer(self.learning_rate).\
-                     minimize(self.loss, var_list=e_vars, global_step=self.global_step)
-                 e_optm = tf.train.AdamOptimizer(self.learning_rate * 0.1).\
-                     minimize(self.g_loss, var_list=e_vars+d_vars, global_step=None)
-                 d_optm = tf.train.AdamOptimizer(self.learning_rate * 0.05). \
-                     minimize(self.d_loss, var_list=d_vars, global_step=None)
-                 self.optimizer = [seg_optm, e_optm, d_optm]
+                seg_optm = tf.train.AdamOptimizer(self.learning_rate[0]).\
+                    minimize(self.loss, var_list=e_vars, global_step=self.global_step)
+                e_optm = tf.train.AdamOptimizer(self.learning_rate[1]).\
+                    minimize(self.g_loss, var_list=e_vars+d_vars, global_step=None)
+                d_optm = tf.train.AdamOptimizer(self.learning_rate[2]). \
+                    minimize(self.d_loss, var_list=d_vars, global_step=None)
+                self.optimizer = [seg_optm, e_optm, d_optm]
 
     def make_summary(self, hist=False):
         if hist:
             tf.summary.histogram('Predicted Prob', tf.argmax(tf.nn.softmax(self.pred), 1))
         tf.summary.scalar('Cross Entropy', self.loss)
-        tf.summary.scalar('Encoder Loss', self.g_loss)
+        tf.summary.scalar('Generator Loss', self.g_loss)
         tf.summary.scalar('Discriminator Loss', self.d_loss)
-        tf.summary.scalar('learning rate', self.learning_rate)
+        tf.summary.scalar('learning rate seg', self.learning_rate[0])
+        tf.summary.scalar('learning rate g', self.learning_rate[1])
+        tf.summary.scalar('learning rate d', self.learning_rate[2])
         self.summary = tf.summary.merge_all()
 
     def train_config(self, x_name, y_name, n_train, n_valid, patch_size, ckdir, loss_type='xent',
@@ -1072,6 +1098,8 @@ class UnetModelGAN(UnetModelCrop):
         # define summary operations
         valid_cross_entropy_summary_op = tf.summary.scalar('xent_validation', self.valid_cross_entropy)
         valid_iou_summary_op = tf.summary.scalar('iou_validation', self.valid_iou)
+        valid_d_loss_summary_op = tf.summary.scalar('d_loss_validation', self.valid_d_loss)
+        valid_g_loss_summary_op = tf.summary.scalar('g_loss_validation', self.valid_g_loss)
         valid_image_summary_op = tf.summary.image('Validation_images_summary', self.valid_images,
                                                   max_outputs=10)
 
@@ -1109,29 +1137,49 @@ class UnetModelGAN(UnetModelCrop):
                           format(epoch, self.global_step_value, step_cross_entropy))
             # validation
             cross_entropy_valid_mean = []
+            d_loss_valid_mean = []
+            g_loss_valid_mean = []
             iou_valid_mean = np.zeros(2)
+            X_batch_val, y_batch_val, pred_valid = None, None, None
             for step in range(0, n_valid, self.bs):
                 X_batch_val, y_batch_val = valid_reader.readerAction(sess)
                 pred_valid, cross_entropy_valid, iou_valid = sess.run([self.pred, self.loss, self.loss_iou],
                                                                       feed_dict={self.inputs[x_name]: X_batch_val,
                                                                                  self.inputs[y_name]: y_batch_val,
                                                                                  self.trainable: False})
+                _, y_batch_val_target = train_reader_valid.readerAction(sess)
+                d_loss_valid, g_loss_valid = sess.run([self.d_loss, self.g_loss],
+                                                      feed_dict={self.inputs[x_name]: X_batch_val,
+                                                                 self.inputs[y_name]: y_batch_val_target,
+                                                                 self.trainable: False})
                 cross_entropy_valid_mean.append(cross_entropy_valid)
+                d_loss_valid_mean.append(d_loss_valid)
+                g_loss_valid_mean.append(g_loss_valid)
                 iou_valid_mean += iou_valid
             cross_entropy_valid_mean = np.mean(cross_entropy_valid_mean)
+            d_loss_valid_mean = np.mean(d_loss_valid_mean)
+            g_loss_valid_mean = np.mean(g_loss_valid_mean)
             iou_valid_mean = iou_valid_mean[0] / iou_valid_mean[1]
             duration = time.time() - start_time
             if valid_iou:
                 print('Validation IoU: {:.3f}, duration: {:.3f}'.format(iou_valid_mean, duration))
             else:
-                print('Validation cross entropy: {:.3f}, duration: {:.3f}'.format(cross_entropy_valid_mean,
-                                                                                  duration))
-            valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op,
+                print('Val xent: {:.3f}, g_loss: {:.3f}, d_loss: {:.3f}, duration: {:.3f}'.
+                      format(cross_entropy_valid_mean, d_loss_valid_mean, g_loss_valid_mean, duration))
+            valid_summaries = sess.run([valid_cross_entropy_summary_op, valid_iou_summary_op,
+                                        valid_d_loss_summary_op, valid_g_loss_summary_op],
+                                       feed_dict={self.valid_cross_entropy: cross_entropy_valid_mean,
+                                                  self.valid_iou: iou_valid_mean,
+                                                  self.valid_d_loss: d_loss_valid_mean,
+                                                  self.valid_g_loss: g_loss_valid_mean})
+            for i in range(4):
+                summary_writer.add_summary(valid_summaries[i], self.global_step_value)
+            '''valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op,
                                                    feed_dict={self.valid_cross_entropy: cross_entropy_valid_mean})
             valid_iou_summary = sess.run(valid_iou_summary_op,
                                          feed_dict={self.valid_iou: iou_valid_mean})
             summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)
-            summary_writer.add_summary(valid_iou_summary, self.global_step_value)
+            summary_writer.add_summary(valid_iou_summary, self.global_step_value)'''
             if valid_iou:
                 if iou_valid_mean > iou_valid_max:
                     iou_valid_max = iou_valid_mean
