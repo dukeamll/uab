@@ -990,7 +990,7 @@ class UnetModelGAN(UnetModelCrop):
             conv6, pool6 = self.conv_conv_pool(pool5, [sfn * 16, sfn * 16], self.trainable, name='conv6',
                                                padding='valid', dropout=self.dropout_rate)
             flat = tf.reshape(pool6, shape=[self.bs, 2 * 2 * sfn * 16])
-            return self.fc_fc(flat, [100, 1], self.trainable, name='fc_final', activation=None, dropout=False)
+            return self.fc_fc(flat, [500, 100, 1], self.trainable, name='fc_final', activation=None, dropout=False)
 
     def create_graph(self, names, class_num, start_filter_num=32):
         self.class_num = class_num
@@ -1003,14 +1003,14 @@ class UnetModelGAN(UnetModelCrop):
 
         self.hard_label = tf.cast(tf.expand_dims(tf.argmax(self.output, axis=-1, name='hard_label'), axis=-1), tf.float32)
         with tf.variable_scope('Discriminator'):
-            self.fake_logit = self.make_discriminator(self.hard_label, sfn=start_filter_num//16, reuse=False)
+            self.fake_logit = self.make_discriminator(self.hard_label, sfn=start_filter_num//4, reuse=False)
             _, w, h, _ = self.inputs[names[1]].get_shape().as_list()
             true_y = tf.cast(tf.image.resize_image_with_crop_or_pad(self.inputs[names[1]], w - self.get_overlap(),
                                                                     h - self.get_overlap()), tf.float32)
-            self.true_logit = self.make_discriminator(true_y, sfn=start_filter_num//16, reuse=True)
+            self.true_logit = self.make_discriminator(true_y, sfn=start_filter_num//4, reuse=True)
 
             self.fake_logit_ = self.make_discriminator(tf.expand_dims(self.output[:, :, :, 0], axis=-1),
-                                                       sfn=start_filter_num//16, reuse=True)
+                                                       sfn=start_filter_num//4, reuse=True)
 
     def make_loss(self, y_name, loss_type='xent', **kwargs):
         with tf.variable_scope('loss'):
@@ -1061,11 +1061,11 @@ class UnetModelGAN(UnetModelCrop):
             if train_var_filter is None:
                 seg_optm = tf.train.AdamOptimizer(self.learning_rate[0]).\
                     minimize(self.loss, var_list=e_vars, global_step=self.global_step)
-                e_optm = tf.train.AdamOptimizer(self.learning_rate[1]).\
-                    minimize(self.g_loss, var_list=e_vars+d_vars, global_step=None)
+                g_optm = tf.train.AdamOptimizer(self.learning_rate[1]).\
+                    minimize(self.g_loss, var_list=e_vars, global_step=None)
                 d_optm = tf.train.AdamOptimizer(self.learning_rate[2]). \
                     minimize(self.d_loss, var_list=d_vars, global_step=None)
-                self.optimizer = [seg_optm, e_optm, d_optm]
+                self.optimizer = [seg_optm, g_optm, d_optm]
 
     def make_summary(self, hist=False):
         if hist:
@@ -1122,7 +1122,7 @@ class UnetModelGAN(UnetModelCrop):
                                                      feed_dict={self.inputs[x_name]:X_batch,
                                                                 self.inputs[y_name]:y_batch,
                                                                 self.trainable: True})
-                _, y_batch = train_reader_valid.readerAction(sess)
+                X_batch, y_batch = train_reader_valid.readerAction(sess)
                 _, _, self.global_step_value = sess.run([self.optimizer[1], self.optimizer[2], self.global_step],
                                                         feed_dict={self.inputs[x_name]: X_batch,
                                                                    self.inputs[y_name]: y_batch,
