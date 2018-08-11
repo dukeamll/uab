@@ -307,7 +307,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
         Conv2d without BN or relu.
         """
         num_x = x.shape[self.channel_axis].value
-        with tf.variable_scope(name) as scope:
+        with tf.variable_scope(name):
             w = tf.get_variable('weights', shape=[kernel_size, kernel_size, num_x, num_o])
             s = [1, stride, stride, 1]
             o = tf.nn.conv2d(x, w, s, padding='SAME')
@@ -321,7 +321,7 @@ class DeeplabV2(uabMakeNetwork_UNet.UnetModel):
         Dilated conv2d without BN or relu.
         """
         num_x = x.shape[self.channel_axis].value
-        with tf.variable_scope(name) as scope:
+        with tf.variable_scope(name):
             w = tf.get_variable('weights', shape=[kernel_size, kernel_size, num_x, num_o])
             o = tf.nn.atrous_conv2d(x, w, dilation_factor, padding='SAME')
             if biased:
