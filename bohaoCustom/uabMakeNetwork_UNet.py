@@ -1078,6 +1078,20 @@ class UnetModelGAN(UnetModelCrop):
         tf.summary.scalar('learning rate d', self.learning_rate[2])
         self.summary = tf.summary.merge_all()
 
+    def make_ckdir(self, ckdir, patch_size, par_dir=None):
+        if type(patch_size) is list:
+            patch_size = patch_size[0]
+        # make unique directory for save
+        dir_name = '{}_PS{}_BS{}_EP{}_LR{}_DS{}_DR{}'.\
+            format(self.model_name, patch_size, self.bs, self.epochs,
+                   '_'.join([str(a) for a in self.lr]),
+                   '_'.join([str(a) for a in self.ds]),
+                   '_'.join([str(a) for a in self.dr]))
+        if par_dir is None:
+            self.ckdir = os.path.join(ckdir, dir_name)
+        else:
+            self.ckdir = os.path.join(ckdir, par_dir, dir_name)
+
     def train_config(self, x_name, y_name, n_train, n_valid, patch_size, ckdir, loss_type='xent',
                      train_var_filter=None, hist=False, par_dir=None, **kwargs):
         self.make_loss(y_name, loss_type, **kwargs)
