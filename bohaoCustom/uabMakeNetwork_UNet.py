@@ -1137,7 +1137,7 @@ class UnetModelGAN(UnetModelCrop):
                                                                 self.inputs[y_name]:y_batch,
                                                                 self.trainable: True})
                 X_batch, _ = train_reader_valid.readerAction(sess)
-                _, y_batch = train_reader_valid.readerAction(sess)
+                _, y_batch = train_reader.readerAction(sess)
                 _, _, self.global_step_value = sess.run([self.optimizer[1], self.optimizer[2], self.global_step],
                                                         feed_dict={self.inputs[x_name]: X_batch,
                                                                    self.inputs[y_name]: y_batch,
