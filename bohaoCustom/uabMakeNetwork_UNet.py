@@ -1105,7 +1105,7 @@ class UnetModelGAN(UnetModelCrop):
         self.n_valid = n_valid
 
     def train(self, x_name, y_name, n_train, sess, summary_writer, n_valid=1000,
-              train_reader=None, train_reader_valid=None, valid_reader=None,
+              train_reader=None, train_reader_source=None, train_reader_target=None, valid_reader=None,
               image_summary=None, verb_step=100, save_epoch=5,
               img_mean=np.array((0, 0, 0), dtype=np.float32),
               continue_dir=None, valid_iou=False):
@@ -1136,8 +1136,8 @@ class UnetModelGAN(UnetModelCrop):
                                                      feed_dict={self.inputs[x_name]:X_batch,
                                                                 self.inputs[y_name]:y_batch,
                                                                 self.trainable: True})
-                X_batch, _ = train_reader_valid.readerAction(sess)
-                _, y_batch = train_reader.readerAction(sess)
+                X_batch, _ = train_reader_target.readerAction(sess)
+                _, y_batch = train_reader_source.readerAction(sess)
                 _, _, self.global_step_value = sess.run([self.optimizer[1], self.optimizer[2], self.global_step],
                                                         feed_dict={self.inputs[x_name]: X_batch,
                                                                    self.inputs[y_name]: y_batch,
@@ -1162,7 +1162,7 @@ class UnetModelGAN(UnetModelCrop):
                                                                       feed_dict={self.inputs[x_name]: X_batch_val,
                                                                                  self.inputs[y_name]: y_batch_val,
                                                                                  self.trainable: False})
-                _, y_batch_val_target = train_reader_valid.readerAction(sess)
+                _, y_batch_val_target = train_reader_source.readerAction(sess)
                 d_loss_valid, g_loss_valid = sess.run([self.d_loss, self.g_loss],
                                                       feed_dict={self.inputs[x_name]: X_batch_val,
                                                                  self.inputs[y_name]: y_batch_val_target,
@@ -1189,12 +1189,6 @@ class UnetModelGAN(UnetModelCrop):
                                                   self.valid_g_loss: g_loss_valid_mean})
             for i in range(4):
                 summary_writer.add_summary(valid_summaries[i], self.global_step_value)
-            '''valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op,
-                                                   feed_dict={self.valid_cross_entropy: cross_entropy_valid_mean})
-            valid_iou_summary = sess.run(valid_iou_summary_op,
-                                         feed_dict={self.valid_iou: iou_valid_mean})
-            summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)
-            summary_writer.add_summary(valid_iou_summary, self.global_step_value)'''
             if valid_iou:
                 if iou_valid_mean > iou_valid_max:
                     iou_valid_max = iou_valid_mean
@@ -1218,10 +1212,11 @@ class UnetModelGAN(UnetModelCrop):
                 saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
                 saver.save(sess, '{}/model_{}.ckpt'.format(self.ckdir, epoch), global_step=self.global_step)
 
-    def run(self, train_reader=None, train_reader_valid=None, valid_reader=None, test_reader=None,
-            pretrained_model_dir=None, layers2load=None, isTrain=False, img_mean=np.array((0, 0, 0), dtype=np.float32),
-            verb_step=100, save_epoch=5, gpu=None, tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1,
-            continue_dir=None, load_epoch_num=None, valid_iou=False, best_model=True):
+    def run(self, train_reader=None, train_reader_source=None, train_reader_target=None, valid_reader=None,
+            test_reader=None, pretrained_model_dir=None, layers2load=None, isTrain=False,
+            img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
+            valid_iou=False, best_model=True):
         if gpu is not None:
             os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
@@ -1243,7 +1238,7 @@ class UnetModelGAN(UnetModelCrop):
                     train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
                     self.train('X', 'Y', self.n_train, sess, train_summary_writer,
                                n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
-                               train_reader_valid=train_reader_valid,
+                               train_reader_source=train_reader_source, train_reader_target=train_reader_target,
                                image_summary=util_functions.image_summary, img_mean=img_mean,
                                verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir,
                                valid_iou=valid_iou)
