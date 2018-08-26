@@ -1001,15 +1001,15 @@ class UnetModelGAN(UnetModelCrop):
             self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
             self.output = tf.nn.softmax(self.pred)
 
-        #self.hard_label = tf.cast(tf.expand_dims(tf.argmax(self.output, axis=-1, name='hard_label'), axis=-1), tf.float32)
+        self.hard_label = tf.cast(tf.expand_dims(tf.argmax(self.output, axis=-1, name='hard_label'), axis=-1), tf.float32)
         with tf.variable_scope('Discriminator'):
-            #self.fake_logit = self.make_discriminator(self.hard_label, sfn=start_filter_num//4, reuse=False)
+            self.fake_logit = self.make_discriminator(self.hard_label, sfn=start_filter_num//4, reuse=False)
             _, w, h, _ = self.inputs[names[1]].get_shape().as_list()
             true_y = tf.cast(tf.image.resize_image_with_crop_or_pad(self.inputs[names[1]], w - self.get_overlap(),
                                                                     h - self.get_overlap()), tf.float32)
-            self.true_logit = self.make_discriminator(true_y, sfn=start_filter_num//4, reuse=False)
+            self.true_logit = self.make_discriminator(true_y, sfn=start_filter_num//4, reuse=True)
 
-            self.fake_logit_ = self.make_discriminator(tf.expand_dims(self.output[:, :, :, 0], axis=-1),
+            self.fake_logit_ = self.make_discriminator(tf.expand_dims(self.output[:, :, :, 1], axis=-1),
                                                        sfn=start_filter_num//4, reuse=True)
 
     def make_loss(self, y_name, loss_type='xent', **kwargs):
@@ -1033,16 +1033,14 @@ class UnetModelGAN(UnetModelCrop):
         with tf.variable_scope('adv_loss'):
             d_loss_real = tf.reduce_mean(
                 tf.nn.sigmoid_cross_entropy_with_logits(logits=self.true_logit,
-                                                        labels=tf.random_uniform([self.bs, 1], minval=0.7, maxval=1)))
+                                                        labels=tf.random_uniform([self.bs, 1], minval=0.7, maxval=1.2)))
             d_loss_fake = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.fake_logit_, labels=tf.random_uniform([self.bs, 1],
-                                                                                                          minval=0,
-                                                                                                          maxval=0.3)))
+                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.fake_logit,
+                                                        labels=tf.random_uniform([self.bs, 1], minval=0, maxval=0.3)))
             self.d_loss = 0.5 * d_loss_real + 0.5 * d_loss_fake
             self.g_loss = -0.5 * tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.fake_logit_, labels=tf.random_uniform([self.bs, 1],
-                                                                                                          minval=0,
-                                                                                                          maxval=0.3)))
+                tf.nn.sigmoid_cross_entropy_with_logits(logits=self.fake_logit_,
+                                                        labels=tf.random_uniform([self.bs, 1], minval=0, maxval=0.3)))
 
     def make_update_ops(self, x_name, y_name):
         tf.add_to_collection('inputs', self.inputs[x_name])
