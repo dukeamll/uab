@@ -1548,6 +1548,13 @@ class UnetModelGAN_V3(UnetModelGAN_V2):
                                     padding='valid', dropout=self.dropout_rate)
         return conv9
 
+    def make_update_ops(self, x_name, y_name):
+        tf.add_to_collection('inputs', self.inputs[x_name])
+        tf.add_to_collection('inputs', self.inputs[y_name])
+        tf.add_to_collection('outputs', self.pred)
+        tf.add_to_collection('outputs', self.refine)
+        self.update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+
     @ staticmethod
     def res_block(input_, n_filter, name):
         res = input_
@@ -1574,16 +1581,16 @@ class UnetModelGAN_V3(UnetModelGAN_V2):
         self.class_num = class_num
 
         conv9 = self.make_encoder(names[0])
-        '''self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
+        self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
         self.output = tf.nn.softmax(self.pred)
 
         self.output = tf.nn.softmax(self.pred)
         self.hard_label = tf.cast(tf.expand_dims(tf.argmax(self.output, axis=-1, name='hard_label'), axis=-1),
-                                  tf.float32)'''
-        tf.stop_gradient(conv9)
+                                  tf.float32)
+        tf.stop_gradient(self.hard_label)
 
         with tf.variable_scope('Attn'):
-            self.refine = self.make_attn(conv9)
+            self.refine = self.make_attn(self.hard_label)
 
         with tf.variable_scope('Discriminator'):
             _, w, h, _ = self.inputs[names[1]].get_shape().as_list()
@@ -1693,10 +1700,10 @@ class UnetModelGAN_V3(UnetModelGAN_V2):
                                                          self.trainable: True})
 
                 if self.global_step_value % verb_step == 0:
-                    pred_train, step_cross_entropy, step_summary = sess.run([self.pred, self.loss, self.summary],
-                                                                            feed_dict={self.inputs[x_name]: X_batch,
-                                                                                       self.inputs[y_name]: y_batch,
-                                                                                       self.trainable: False})
+                    step_cross_entropy, step_summary = sess.run([self.loss, self.summary],
+                                                                feed_dict={self.inputs[x_name]: X_batch,
+                                                                           self.inputs[y_name]: y_batch,
+                                                                           self.trainable: False})
                     summary_writer.add_summary(step_summary, self.global_step_value)
                     print('Epoch {:d} step {:d}\tcross entropy = {:.3f}'.
                           format(epoch, self.global_step_value, step_cross_entropy))
@@ -1708,11 +1715,10 @@ class UnetModelGAN_V3(UnetModelGAN_V2):
             X_batch_val, y_batch_val, pred_valid, refine_valid = None, None, None, None
             for step in range(0, n_valid, self.bs):
                 X_batch_val, y_batch_val = valid_reader.readerAction(sess)
-                pred_valid, refine_valid, cross_entropy_valid, iou_valid = sess.run([self.pred, self.refine,
-                                                                                     self.loss, self.loss_iou],
-                                                                      feed_dict={self.inputs[x_name]: X_batch_val,
-                                                                                 self.inputs[y_name]: y_batch_val,
-                                                                                 self.trainable: False})
+                pred_valid, refine_valid, cross_entropy_valid, iou_valid = sess.run(
+                    [self.pred, self.refine, self.loss, self.loss_iou], feed_dict={self.inputs[x_name]: X_batch_val,
+                                                                                   self.inputs[y_name]: y_batch_val,
+                                                                                   self.trainable: False})
                 _, y_batch_val_target = train_reader_source.readerAction(sess)
                 d_loss_valid, g_loss_valid = sess.run([self.d_loss, self.g_loss],
                                                       feed_dict={self.inputs[x_name]: X_batch_val,
@@ -1756,8 +1762,8 @@ class UnetModelGAN_V3(UnetModelGAN_V2):
                 valid_image_summary = sess.run(
                     valid_image_summary_op, feed_dict={
                         self.valid_images: image_summary(X_batch_val[:, 92:-92, 92:-92, :3],
-                                                         y_batch_val[:, 92:-92, 92:-92, :], pred_valid,
-                                                         refine_valid, img_mean)})
+                                                         y_batch_val[:, 92:-92, 92:-92, :],
+                                                         pred_valid, refine_valid, img_mean)})
                 summary_writer.add_summary(valid_image_summary, self.global_step_value)
 
             if epoch % save_epoch == 0:
@@ -1820,10 +1826,10 @@ class UnetModelGAN_V3(UnetModelGAN_V2):
     def image_summary(image, truth, prediction, refine, img_mean=np.array((0, 0, 0), dtype=np.float32)):
         truth_img = util_functions.decode_labels(truth)
 
-        #prediction = util_functions.pad_prediction(image, prediction)
-
+        prediction = util_functions.pad_prediction(image, prediction)
         pred_labels = util_functions.get_pred_labels(prediction)
         pred_img = util_functions.decode_labels(pred_labels)
+
         refine_img = util_functions.decode_labels(np.rint(refine))
         return np.concatenate([image + img_mean, truth_img, pred_img, refine_img], axis=2)
 
