@@ -1601,6 +1601,7 @@ class UnetModelGAN_V3(UnetModelGAN_V2):
             self.fake_logit = self.make_discriminator(self.refine, sfn=start_filter_num//4, reuse=True)
 
     def make_attn(self, pred):
+        orig = pred
         padding = tf.constant([[0, 0], [self.pad, self.pad], [self.pad, self.pad], [0, 0]])
         pred = tf.pad(pred, padding, 'REFLECT', name='reflect_pad')
         pred = self.conv_conv_pool(pred, [self.sfn], self.trainable, 'conv_block_1', (9, 9), (1, 1), pool=False,
@@ -1614,7 +1615,8 @@ class UnetModelGAN_V3(UnetModelGAN_V2):
 
         pred = self.trans_2d_block(pred, self.sfn * 2, '1')
         pred = self.trans_2d_block(pred, self.sfn, '2')
-        pred = self.conv_conv_pool(pred, [1], self.trainable, '3', (9, 9), pool=False, activation=tf.nn.sigmoid)
+        pred = self.conv_conv_pool(tf.concat([pred, orig], axis=-1), [1], self.trainable, '3', (9, 9), pool=False,
+                                   activation=tf.nn.sigmoid)
         return pred
 
     def make_loss(self, y_name, loss_type='xent', **kwargs):
@@ -1822,6 +1824,15 @@ class UnetModelGAN_V3(UnetModelGAN_V2):
                                                           overlap=pad)
             return util_functions.get_pred_labels(image_pred) * truth_val
 
+    def test(self, x_name, sess, test_iterator):
+        result = []
+        for X_batch in test_iterator:
+            pred = sess.run(self.refine, feed_dict={self.inputs[x_name]: X_batch,
+                                                    self.trainable: False})
+            result.append(np.concatenate([1-pred, pred], axis=-1))
+        result = np.vstack(result)
+        return result
+
     @staticmethod
     def image_summary(image, truth, prediction, refine, img_mean=np.array((0, 0, 0), dtype=np.float32)):
         truth_img = util_functions.decode_labels(truth)
@@ -1833,6 +1844,55 @@ class UnetModelGAN_V3(UnetModelGAN_V2):
         refine_img = util_functions.decode_labels(np.rint(refine))
         return np.concatenate([image + img_mean, truth_img, pred_img, refine_img], axis=2)
 
+
+class UnetModelGAN_V3Shrink(UnetModelGAN_V3):
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
+                 learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
+                 batch_size=5, start_filter_num=32, pad=24):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.lr = self.make_list(learn_rate)
+        self.ds = self.make_list(decay_step)
+        self.dr = self.make_list(decay_rate)
+        self.name = 'UnetGAN_V3Shrink'
+        self.model_name = self.get_unique_name(model_name)
+        self.sfn = start_filter_num
+        self.pad = pad
+        self.learning_rate = None
+        self.valid_cross_entropy = tf.placeholder(tf.float32, [])
+        self.valid_iou = tf.placeholder(tf.float32, [])
+        self.valid_d_loss = tf.placeholder(tf.float32, [])
+        self.valid_g_loss = tf.placeholder(tf.float32, [])
+        self.valid_images = tf.placeholder(
+            tf.uint8, shape=[None, input_size[0] - self.get_overlap(), (input_size[1] - self.get_overlap()) * 4, 3],
+            name='validation_images')
+        self.update_ops = None
+        self.config = None
+        self.hard_label = None
+        self.refine = None
+        self.fake_logit = None
+        self.true_logit = None
+        self.d_loss = None
+        self.g_loss = None
+
+    def make_attn(self, pred):
+        orig = pred
+        padding = tf.constant([[0, 0], [self.pad, self.pad], [self.pad, self.pad], [0, 0]])
+        pred = tf.pad(pred, padding, 'REFLECT', name='reflect_pad')
+        pred = self.conv_conv_pool(pred, [self.sfn // 2], self.trainable, 'conv_block_1', (9, 9), (1, 1), pool=False,
+                                   activation=tf.nn.relu)
+        pred = self.conv_conv_pool(pred, [self.sfn], self.trainable, 'conv_block_2', (3, 3), (2, 2), pool=False,
+                                   activation=tf.nn.relu)
+        pred = self.conv_conv_pool(pred, [self.sfn * 2], self.trainable, 'conv_block_3', (3, 3), (2, 2), pool=False,
+                                   activation=tf.nn.relu)
+        for i in range(3):
+            pred = self.res_block(pred, self.sfn * 2, str(i))
+
+        pred = self.trans_2d_block(pred, self.sfn, '1')
+        pred = self.trans_2d_block(pred, self.sfn // 2, '2')
+        pred = self.conv_conv_pool(tf.concat([pred, orig], axis=-1), [1], self.trainable, '3', (9, 9), pool=False,
+                                   activation=tf.nn.sigmoid)
+        return pred
 
 
 class UnetModelCropSplit(UnetModelCrop):

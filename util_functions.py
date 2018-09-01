@@ -150,6 +150,7 @@ def data_augmentation(data, random_rotation=False, random_flip=False):
             data = data[::-1,:,:]
     return data          
 
+
 def get_pred_labels(pred):
     """
     Get predicted labels from the output of CNN softmax function
