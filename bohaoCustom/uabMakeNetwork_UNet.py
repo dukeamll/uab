@@ -2114,3 +2114,230 @@ class ResUnetModel_Crop(UnetModelCrop):
 
         self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
         self.output = tf.nn.softmax(self.pred)
+
+
+class UnetModelTrilabel(UnetModelCrop):
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
+                 learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
+                 batch_size=5, start_filter_num=32):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.name = 'UnetTrilabel'
+        self.model_name = self.get_unique_name(model_name)
+        self.sfn = start_filter_num
+        self.learning_rate = None
+        self.valid_cross_entropy = [tf.placeholder(tf.float32, []), tf.placeholder(tf.float32, [])]
+        self.valid_iou = [tf.placeholder(tf.float32, []), tf.placeholder(tf.float32, [])]
+        self.valid_images = [tf.placeholder(tf.uint8, shape=[None, input_size[0],
+                                                             input_size[1] * 3, 3], name='validation_images_0'),
+                             tf.placeholder(tf.uint8, shape=[None, input_size[0],
+                                                             input_size[1] * 3, 3], name='validation_images_1')
+                             ]
+        self.update_ops = None
+        self.config = None
+
+    def make_loss(self, y_name, loss_type='xent', **kwargs):
+        with tf.variable_scope('loss'):
+            # background, class_1, class_2
+            pred_class_1 = tf.concat([self.pred[:, :, :, 0], self.pred[:, :, :, 1]], axis=-1)
+            pred_class_2 = tf.concat([self.pred[:, :, :, 0], self.pred[:, :, :, 2]], axis=-1)
+            pred_flat_1 = tf.reshape(pred_class_1, [-1, 2])
+            pred_flat_2 = tf.reshape(pred_class_2, [-1, 2])
+            _, w, h, _ = self.inputs[y_name].get_shape().as_list()
+            y = tf.image.resize_image_with_crop_or_pad(self.inputs[y_name], w-self.get_overlap(), h-self.get_overlap())
+            y_flat = tf.reshape(tf.squeeze(y, axis=[3]), [-1, ])
+            indices = tf.squeeze(tf.where(tf.less_equal(y_flat, self.class_num - 1)), 1)
+            gt = tf.gather(y_flat, indices)
+            prediction_1 = tf.gather(pred_flat_1, indices)
+            prediction_2 = tf.gather(pred_flat_2, indices)
+
+            pred_1 = tf.argmax(prediction_1, axis=-1, output_type=tf.int32)
+            pred_2 = tf.argmax(prediction_2, axis=-1, output_type=tf.int32)
+            intersect_1 = tf.cast(tf.reduce_sum(gt * pred_1), tf.float32)
+            union_1 = tf.cast(tf.reduce_sum(gt), tf.float32) + tf.cast(tf.reduce_sum(pred_1), tf.float32) \
+                    - tf.cast(tf.reduce_sum(gt * pred_1), tf.float32)
+            intersect_2 = tf.cast(tf.reduce_sum(gt * pred_2), tf.float32)
+            union_2 = tf.cast(tf.reduce_sum(gt), tf.float32) + tf.cast(tf.reduce_sum(pred_2), tf.float32) \
+                      - tf.cast(tf.reduce_sum(gt * pred_2), tf.float32)
+            self.loss_iou = [tf.convert_to_tensor([intersect_1, union_1]), tf.convert_to_tensor([intersect_2, union_2])]
+
+            if loss_type == 'xent':
+                self.loss = [tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction_1, labels=gt)),
+                             tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction_2, labels=gt))]
+            else:
+                pass
+
+    def make_optimizer(self, train_var_filter):
+        with tf.control_dependencies(self.update_ops):
+            if train_var_filter is None:
+                self.optimizer = [tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss[0],
+                                                                                     global_step=self.global_step),
+                                  tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss[1],
+                                                                                      global_step=None)]
+            else:
+                # TODO make optms into list
+                print('Train parameters in scope:')
+                for layer in train_var_filter:
+                    print(layer)
+                train_vars = tf.trainable_variables()
+                var_list = []
+                for var in train_vars:
+                    if var.name.split('/')[0] in train_var_filter:
+                        var_list.append(var)
+                self.optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss,
+                                                                                     global_step=self.global_step,
+                                                                                     var_list=var_list)
+
+    def make_summary(self, hist=False):
+        if hist:
+            tf.summary.histogram('Predicted Prob', tf.argmax(tf.nn.softmax(self.pred), 1))
+        tf.summary.scalar('Cross Entropy 0', self.loss[0])
+        tf.summary.scalar('Cross Entropy 1', self.loss[1])
+        tf.summary.scalar('learning rate', self.learning_rate)
+        self.summary = tf.summary.merge_all()
+
+    def run(self, train_reader_1=None, train_reader_2=None, valid_reader_1=None, valid_reader_2=None, test_reader=None,
+            pretrained_model_dir=None,  layers2load=None, isTrain=False,
+            img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5,
+            gpu=None, tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
+            valid_iou=False, best_model=True):
+        if gpu is not None:
+            os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+        if isTrain:
+            coord = tf.train.Coordinator()
+            with tf.Session(config=self.config) as sess:
+                # init model
+                init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
+                sess.run(init)
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                # load model
+                if pretrained_model_dir is not None:
+                    if layers2load is not None:
+                        self.load_weights(pretrained_model_dir, layers2load)
+                    else:
+                        self.load(pretrained_model_dir, sess, saver, epoch=load_epoch_num)
+                threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+                try:
+                    train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
+                    self.train('X', 'Y', self.n_train, sess, train_summary_writer,
+                               n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
+                               image_summary=util_functions.image_summary, img_mean=img_mean,
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir, valid_iou=valid_iou)
+                finally:
+                    coord.request_stop()
+                    coord.join(threads)
+                    saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)
+        else:
+            if self.config is None:
+                self.config = tf.ConfigProto(allow_soft_placement=True)
+            pad = self.get_overlap()
+            with tf.Session(config=self.config) as sess:
+                init = tf.global_variables_initializer()
+                sess.run(init)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
+                self.model_name = pretrained_model_dir.split('/')[-1]
+                result = self.test('X', sess, test_reader)
+            image_pred = uabUtilreader.un_patchify_shrink(result,
+                                                          [tile_size[0] + pad, tile_size[1] + pad],
+                                                          tile_size,
+                                                          patch_size,
+                                                          [patch_size[0] - pad, patch_size[1] - pad],
+                                                          overlap=pad)
+            return util_functions.get_pred_labels(image_pred) * truth_val
+
+    def train(self, x_name, y_name, n_train, sess, summary_writer, n_valid=1000,
+              train_reader_0=None, train_reader_1=None, valid_reader=None,
+              image_summary=None, verb_step=100, save_epoch=5,
+              img_mean=np.array((0, 0, 0), dtype=np.float32),
+              continue_dir=None, valid_iou=False):
+        # define summary operations
+        valid_cross_entropy_summary_op = [tf.summary.scalar('xent_validation_0', self.valid_cross_entropy[0]),
+                                          tf.summary.scalar('xent_validation_1', self.valid_cross_entropy[1])]
+        valid_iou_summary_op = [tf.summary.scalar('iou_validation_0', self.valid_iou[0]),
+                                tf.summary.scalar('iou_validation_1', self.valid_iou[1])]
+        valid_image_summary_op = [tf.summary.image('Validation_images_summary_0', self.valid_images[0],
+                                                   max_outputs=10),
+                                  tf.summary.image('Validation_images_summary_1', self.valid_images[1],
+                                                   max_outputs=10)
+                                  ]
+
+        if continue_dir is not None and os.path.exists(continue_dir):
+            self.load(continue_dir, sess)
+            gs = sess.run(self.global_step)
+            start_epoch = int(np.ceil(gs/n_train*self.bs))
+            start_step = gs - int(start_epoch*n_train/self.bs)
+        else:
+            start_epoch = 0
+            start_step = 0
+
+        cross_entropy_valid_min = np.inf
+        iou_valid_max = 0
+        for epoch in range(start_epoch, self.epochs):
+            start_time = time.time()
+            for step in range(start_step, n_train, self.bs):
+                X_batch, y_batch = train_reader_0.readerAction(sess)
+                _, self.global_step_value = sess.run([self.optimizer[0], self.global_step],
+                                                     feed_dict={self.inputs[x_name]:X_batch,
+                                                                self.inputs[y_name]:y_batch,
+                                                                self.trainable: True})
+                if self.global_step_value % verb_step == 0:
+                    pred_train, step_cross_entropy, step_summary = \
+                        sess.run([self.pred, self.loss[0], self.summary],
+                                 feed_dict={self.inputs[x_name]: X_batch,
+                                            self.inputs[y_name]: y_batch,
+                                            self.trainable: False})
+                    summary_writer.add_summary(step_summary, self.global_step_value)
+                    print('Epoch {:d} step {:d}\tcross entropy_0 = {:.3f}'.
+                          format(epoch, self.global_step_value, step_cross_entropy))
+                X_batch, y_batch = train_reader_1.readerAction(sess)
+                _, self.global_step_value = sess.run([self.optimizer[1], self.global_step],
+                                                     feed_dict={self.inputs[x_name]: X_batch,
+                                                                self.inputs[y_name]: y_batch,
+                                                                self.trainable: True})
+                if self.global_step_value % verb_step == 0:
+                    pred_train, step_cross_entropy, step_summary = \
+                        sess.run([self.pred, self.loss[1], self.summary],
+                                 feed_dict={self.inputs[x_name]: X_batch,
+                                            self.inputs[y_name]: y_batch,
+                                            self.trainable: False})
+                    summary_writer.add_summary(step_summary, self.global_step_value)
+                    print('Epoch {:d} step {:d}\tcross entropy_1 = {:.3f}'.
+                          format(epoch, self.global_step_value, step_cross_entropy))
+            # validation
+            for i in range(2):
+                cross_entropy_valid_mean = []
+                iou_valid_mean = np.zeros(2)
+                for step in range(0, n_valid, self.bs):
+                    X_batch_val, y_batch_val = valid_reader[i].readerAction(sess)
+                    pred_valid, cross_entropy_valid, iou_valid = sess.run([self.pred, self.loss[i], self.loss_iou[i]],
+                                                                          feed_dict={self.inputs[x_name]: X_batch_val,
+                                                                                     self.inputs[y_name]: y_batch_val,
+                                                                                     self.trainable: False})
+                    cross_entropy_valid_mean.append(cross_entropy_valid)
+                    iou_valid_mean += iou_valid
+                cross_entropy_valid_mean = np.mean(cross_entropy_valid_mean)
+                iou_valid_mean = iou_valid_mean[0] / iou_valid_mean[1]
+                duration = time.time() - start_time
+                if valid_iou:
+                    print('Validation IoU: {:.3f}, duration: {:.3f}'.format(iou_valid_mean, duration))
+                else:
+                    print('Validation cross entropy: {:.3f}, duration: {:.3f}'.format(cross_entropy_valid_mean,
+                                                                                      duration))
+                valid_cross_entropy_summary = sess.run(valid_cross_entropy_summary_op[i],
+                                                       feed_dict={self.valid_cross_entropy[i]: cross_entropy_valid_mean})
+                valid_iou_summary = sess.run(valid_iou_summary_op,
+                                             feed_dict={self.valid_iou[i]: iou_valid_mean})
+                summary_writer.add_summary(valid_cross_entropy_summary, self.global_step_value)
+                summary_writer.add_summary(valid_iou_summary, self.global_step_value)
+
+                if image_summary is not None:
+                    valid_image_summary = sess.run(valid_image_summary_op[i],
+                                                   feed_dict={self.valid_images[i]:
+                                                                  image_summary(X_batch_val[:,:,:,:3], y_batch_val, pred_valid,
+                                                                                img_mean)})
+                    summary_writer.add_summary(valid_image_summary, self.global_step_value)
+
+            if epoch % save_epoch == 0:
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                saver.save(sess, '{}/model_{}.ckpt'.format(self.ckdir, epoch), global_step=self.global_step)
