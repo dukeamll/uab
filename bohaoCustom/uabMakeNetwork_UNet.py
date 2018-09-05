@@ -1895,6 +1895,84 @@ class UnetModelGAN_V3Shrink(UnetModelGAN_V3):
         return pred
 
 
+class UnetModelGAN_V3ShrinkRGB(UnetModelGAN_V3Shrink):
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
+                 learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
+                 batch_size=5, start_filter_num=32, pad=24):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.lr = self.make_list(learn_rate)
+        self.ds = self.make_list(decay_step)
+        self.dr = self.make_list(decay_rate)
+        self.name = 'UnetGAN_V3ShrinkRGB'
+        self.model_name = self.get_unique_name(model_name)
+        self.sfn = start_filter_num
+        self.pad = pad
+        self.learning_rate = None
+        self.valid_cross_entropy = tf.placeholder(tf.float32, [])
+        self.valid_iou = tf.placeholder(tf.float32, [])
+        self.valid_d_loss = tf.placeholder(tf.float32, [])
+        self.valid_g_loss = tf.placeholder(tf.float32, [])
+        self.valid_images = tf.placeholder(
+            tf.uint8, shape=[None, input_size[0] - self.get_overlap(), (input_size[1] - self.get_overlap()) * 4, 3],
+            name='validation_images')
+        self.update_ops = None
+        self.config = None
+        self.hard_label = None
+        self.refine = None
+        self.fake_logit = None
+        self.true_logit = None
+        self.d_loss = None
+        self.g_loss = None
+
+    def make_attn(self, rgb, pred):
+        orig = pred
+        rgb = rgb[:, 92:-92, 92:-92, :]
+        padding = tf.constant([[0, 0], [self.pad, self.pad], [self.pad, self.pad], [0, 0]])
+        channel = []
+        for i in range(3):
+            channel.append(rgb[:, :, :, 0] * pred[:, :, :, 0])
+        pred = tf.stack(channel, axis=-1)
+        pred = tf.pad(pred, padding, 'REFLECT', name='reflect_pad')
+        pred = self.conv_conv_pool(pred, [self.sfn // 2], self.trainable, 'conv_block_1', (9, 9), (1, 1), pool=False,
+                                   activation=tf.nn.relu)
+        pred = self.conv_conv_pool(pred, [self.sfn], self.trainable, 'conv_block_2', (3, 3), (2, 2), pool=False,
+                                   activation=tf.nn.relu)
+        pred = self.conv_conv_pool(pred, [self.sfn * 2], self.trainable, 'conv_block_3', (3, 3), (2, 2), pool=False,
+                                   activation=tf.nn.relu)
+        for i in range(3):
+            pred = self.res_block(pred, self.sfn * 2, str(i))
+
+        pred = self.trans_2d_block(pred, self.sfn, '1')
+        pred = self.trans_2d_block(pred, self.sfn // 2, '2')
+        pred = self.conv_conv_pool(tf.concat([pred, orig], axis=-1), [1], self.trainable, '3', (9, 9), pool=False,
+                                   activation=tf.nn.sigmoid)
+        return pred
+
+    def create_graph(self, names, class_num, start_filter_num=32):
+        self.class_num = class_num
+
+        conv9 = self.make_encoder(names[0])
+        self.pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
+        self.output = tf.nn.softmax(self.pred)
+
+        self.output = tf.nn.softmax(self.pred)
+        self.hard_label = tf.cast(tf.expand_dims(tf.argmax(self.output, axis=-1, name='hard_label'), axis=-1),
+                                  tf.float32)
+        tf.stop_gradient(self.hard_label)
+
+        with tf.variable_scope('Attn'):
+            self.refine = self.make_attn(self.inputs[names[0]], self.hard_label)
+
+        with tf.variable_scope('Discriminator'):
+            _, w, h, _ = self.inputs[names[1]].get_shape().as_list()
+            true_y = tf.cast(tf.image.resize_image_with_crop_or_pad(self.inputs[names[1]], w - self.get_overlap(),
+                                                                    h - self.get_overlap()), tf.float32)
+            self.true_logit = self.make_discriminator(true_y, sfn=start_filter_num//4, reuse=False)
+
+            self.fake_logit = self.make_discriminator(self.refine, sfn=start_filter_num//4, reuse=True)
+
+
 class UnetModelCropSplit(UnetModelCrop):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
