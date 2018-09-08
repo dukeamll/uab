@@ -2018,7 +2018,7 @@ class UnetModelGAN_V4RGB(UnetModelGAN_V3ShrinkRGB):
             conv4, pool4 = self.conv_conv_pool(pool3, [sfn * 2], self.trainable, name='conv4', kernal_size=(3, 3),
                                                pool_size=(2, 2), conv_stride=(1, 1), padding='valid',
                                                dropout=self.dropout_rate, pool=True)
-            flat = tf.reshape(pool4, shape=[self.bs, 4 * 4 * sfn * 4])
+            flat = tf.reshape(pool4, shape=[self.bs, 4 * 4 * sfn * 2])
             return self.fc_fc(flat, [100, 1], self.trainable, name='fc_final', activation=None, dropout=False)
 
 
