@@ -2022,6 +2022,61 @@ class UnetModelGAN_V4RGB(UnetModelGAN_V3ShrinkRGB):
             return self.fc_fc(flat, [100, 1], self.trainable, name='fc_final', activation=None, dropout=False)
 
 
+class UnetModelGAN_V5RGB(UnetModelGAN_V4RGB):
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
+                 learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
+                 batch_size=5, start_filter_num=32, pad=24):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.lr = self.make_list(learn_rate)
+        self.ds = self.make_list(decay_step)
+        self.dr = self.make_list(decay_rate)
+        self.name = 'UnetGAN_V5'
+        self.model_name = self.get_unique_name(model_name)
+        self.sfn = start_filter_num
+        self.pad = pad
+        self.learning_rate = None
+        self.valid_cross_entropy = tf.placeholder(tf.float32, [])
+        self.valid_iou = tf.placeholder(tf.float32, [])
+        self.valid_d_loss = tf.placeholder(tf.float32, [])
+        self.valid_g_loss = tf.placeholder(tf.float32, [])
+        self.valid_images = tf.placeholder(
+            tf.uint8, shape=[None, input_size[0] - self.get_overlap(), (input_size[1] - self.get_overlap()) * 4, 3],
+            name='validation_images')
+        self.update_ops = None
+        self.config = None
+        self.hard_label = None
+        self.refine = None
+        self.fake_logit = None
+        self.true_logit = None
+        self.d_loss = None
+        self.g_loss = None
+
+    def make_discriminator(self, y, sfn=4, reuse=False):
+        with tf.variable_scope('discr', reuse=reuse):
+            # downsample
+            conv1 = self.conv_conv_pool(y, [sfn // 2], self.trainable, name='conv1', kernal_size=(5, 5), conv_stride=(2, 2),
+                                        padding='valid', dropout=self.dropout_rate, pool=False, bn=True,
+                                        activation=tf.nn.leaky_relu)
+            conv2 = self.conv_conv_pool(conv1, [sfn], self.trainable, name='conv2', kernal_size=(5, 5),
+                                        conv_stride=(2, 2), padding='valid', dropout=self.dropout_rate, pool=False,
+                                        bn=True, activation=tf.nn.leaky_relu)
+            conv3 = self.conv_conv_pool(conv2, [sfn * 2], self.trainable, name='conv3', kernal_size=(5, 5),
+                                        conv_stride=(2, 2), padding='valid', dropout=self.dropout_rate, pool=False,
+                                        bn=True, activation=tf.nn.leaky_relu)
+            conv4 = self.conv_conv_pool(conv3, [sfn * 4], self.trainable, name='conv4', kernal_size=(5, 5),
+                                        conv_stride=(2, 2), padding='valid', dropout=self.dropout_rate, pool=False,
+                                        bn=True, activation=tf.nn.leaky_relu)
+            conv5 = self.conv_conv_pool(conv4, [sfn * 8], self.trainable, name='conv5', kernal_size=(5, 5),
+                                        conv_stride=(2, 2), padding='valid', dropout=self.dropout_rate, pool=False,
+                                        bn=True, activation=tf.nn.leaky_relu)
+            conv6 = self.conv_conv_pool(conv5, [sfn * 16], self.trainable, name='conv6', kernal_size=(5, 5),
+                                        conv_stride=(2, 2), padding='valid', dropout=self.dropout_rate, pool=False,
+                                        bn=True, activation=tf.nn.leaky_relu)
+            flat = tf.reshape(conv6, shape=[self.bs, 3 * 3 * sfn * 16])
+            return self.fc_fc(flat, [128, 1], self.trainable, name='fc_final', activation=None, dropout=False)
+
+
 class UnetModelCropSplit(UnetModelCrop):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
