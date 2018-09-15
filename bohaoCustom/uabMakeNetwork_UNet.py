@@ -2025,7 +2025,7 @@ class UnetModelGAN_V4RGB(UnetModelGAN_V3ShrinkRGB):
 class UnetModelGAN_V5RGB(UnetModelGAN_V4RGB):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
-                 batch_size=5, start_filter_num=32, pad=24):
+                 batch_size=5, start_filter_num=32, pad=24, train_unet=False):
         network.Network.__init__(self, inputs, trainable, dropout_rate,
                                  learn_rate, decay_step, decay_rate, epochs, batch_size)
         self.lr = self.make_list(learn_rate)
@@ -2034,6 +2034,7 @@ class UnetModelGAN_V5RGB(UnetModelGAN_V4RGB):
         self.name = 'UnetGAN_V5'
         self.model_name = self.get_unique_name(model_name)
         self.sfn = start_filter_num
+        self.train_unet = train_unet
         self.pad = pad
         self.learning_rate = None
         self.valid_cross_entropy = tf.placeholder(tf.float32, [])
@@ -2051,6 +2052,24 @@ class UnetModelGAN_V5RGB(UnetModelGAN_V4RGB):
         self.true_logit = None
         self.d_loss = None
         self.g_loss = None
+
+    def make_optimizer(self, train_var_filter):
+        with tf.control_dependencies(self.update_ops):
+            if train_var_filter is None:
+                t_vars = tf.trainable_variables()
+                e_vars = [var for var in t_vars if 'Attn' in var.name]
+                d_vars = [var for var in t_vars if 'Discriminator' in var.name]
+                if self.train_unet:
+                    seg_vars = [var for var in t_vars if 'Discriminator' not in var.name]
+                else:
+                    seg_vars = e_vars
+                seg_optm = tf.train.AdamOptimizer(self.learning_rate[0], name='Adam_Seg').\
+                    minimize(self.loss, var_list=seg_vars, global_step=self.global_step)
+                g_optm = tf.train.AdamOptimizer(self.learning_rate[1], name='Adam_g').\
+                    minimize(self.g_loss, var_list=e_vars, global_step=None)
+                d_optm = tf.train.AdamOptimizer(self.learning_rate[2], name='Adam_d').\
+                    minimize(self.d_loss, var_list=d_vars, global_step=None)
+                self.optimizer = [seg_optm, g_optm, d_optm]
 
     def make_discriminator(self, y, sfn=4, reuse=False):
         with tf.variable_scope('discr', reuse=reuse):
