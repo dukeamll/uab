@@ -330,7 +330,7 @@ class SSAN(uabMakeNetwork_UNet.UnetModelGAN_V4RGB):
 class SSAN_UNet(SSAN):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
-                 batch_size=5, start_filter_num=32, lada=2):
+                 batch_size=5, start_filter_num=32, lada=2, slow_iter=500):
         network.Network.__init__(self, inputs, trainable, dropout_rate,
                                  learn_rate, decay_step, decay_rate, epochs, batch_size)
         self.lr = self.make_list(learn_rate)
@@ -340,6 +340,7 @@ class SSAN_UNet(SSAN):
         self.model_name = self.get_unique_name(model_name)
         self.sfn = start_filter_num
         self.lada = lada
+        self.slow_iter = 500
         self.input_size = input_size
         self.learning_rate = None
         self.valid_cross_entropy = tf.placeholder(tf.float32, [])
@@ -401,7 +402,7 @@ class SSAN_UNet(SSAN):
                                                pool=True, bn=False, activation=tf.nn.relu)
             conv3 = self.conv_conv_pool(pool2, [256], self.trainable, name='conv3', kernal_size=(3, 3),
                                         conv_stride=(1, 1), padding='valid', dropout=self.dropout_rate, pool=False,
-                                        bn=True, activation=tf.nn.relu)
+                                        bn=False, activation=tf.nn.relu)
             conv4 = tf.layers.conv2d(conv3, 2, kernel_size=(3, 3), dilation_rate=(32, 32), name='layerconv4')
             flat = tf.reshape(conv4, shape=[self.bs, 27*27*2])
             return self.fc_fc(flat, [1], self.trainable, name='fc_final', activation=None, dropout=False)
@@ -500,26 +501,27 @@ class SSAN_UNet(SSAN):
         iou_valid_max = 0
         for epoch in range(start_epoch, self.epochs):
             start_time = time.time()
-            for step in range(start_step, n_train, self.bs):
-                X_batch, y_batch = train_reader.readerAction(sess)
-                _, self.global_step_value = sess.run([self.optimizer[0], self.global_step],
-                                                     feed_dict={self.inputs[x_name]:X_batch,
-                                                                self.inputs[y_name]:y_batch,
-                                                                self.trainable: True})
-                X_batch, _ = train_reader_target.readerAction(sess)
-                _, y_batch = train_reader_source.readerAction(sess)
-                sess.run([self.optimizer[1]], feed_dict={self.inputs[x_name]: X_batch,
-                                                         self.inputs[y_name]: y_batch,
-                                                         self.trainable: True})
+            for step in range(start_step, n_train, self.bs * self.slow_iter):
+                for _ in range(self.slow_iter):
+                    X_batch, y_batch = train_reader.readerAction(sess)
+                    _, self.global_step_value = sess.run([self.optimizer[0], self.global_step],
+                                                         feed_dict={self.inputs[x_name]:X_batch,
+                                                                    self.inputs[y_name]:y_batch,
+                                                                    self.trainable: True})
+                    X_batch, _ = train_reader_target.readerAction(sess)
+                    _, y_batch = train_reader_source.readerAction(sess)
+                    sess.run([self.optimizer[1]], feed_dict={self.inputs[x_name]: X_batch,
+                                                             self.inputs[y_name]: y_batch,
+                                                             self.trainable: True})
 
-                if self.global_step_value % verb_step == 0:
-                    step_cross_entropy, step_summary = sess.run([self.loss, self.summary],
-                                                                feed_dict={self.inputs[x_name]: X_batch,
-                                                                           self.inputs[y_name]: y_batch,
-                                                                           self.trainable: False})
-                    summary_writer.add_summary(step_summary, self.global_step_value)
-                    print('Epoch {:d} step {:d}\tcross entropy = {:.3f}'.
-                          format(epoch, self.global_step_value, step_cross_entropy))
+                    if self.global_step_value % verb_step == 0:
+                        step_cross_entropy, step_summary = sess.run([self.loss, self.summary],
+                                                                    feed_dict={self.inputs[x_name]: X_batch,
+                                                                               self.inputs[y_name]: y_batch,
+                                                                               self.trainable: False})
+                        summary_writer.add_summary(step_summary, self.global_step_value)
+                        print('Epoch {:d} step {:d}\tcross entropy = {:.3f}'.
+                              format(epoch, self.global_step_value, step_cross_entropy))
             # validation
             cross_entropy_valid_mean = []
             d_loss_valid_mean = []
