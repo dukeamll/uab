@@ -400,11 +400,14 @@ class SSAN_UNet(SSAN):
             conv2, pool2 = self.conv_conv_pool(pool1, [128, 128], self.trainable, name='conv2', kernal_size=(3, 3),
                                                conv_stride=(1, 1), padding='valid', dropout=self.dropout_rate,
                                                pool=True, bn=False, activation=tf.nn.relu)
-            conv3 = self.conv_conv_pool(pool2, [256], self.trainable, name='conv3', kernal_size=(3, 3),
-                                        conv_stride=(1, 1), padding='valid', dropout=self.dropout_rate, pool=False,
-                                        bn=False, activation=tf.nn.relu)
-            conv4 = tf.layers.conv2d(conv3, 2, kernel_size=(3, 3), dilation_rate=(32, 32), name='layerconv4')
-            flat = tf.reshape(conv4, shape=[self.bs, 27*27*2])
+            conv3, pool3 = self.conv_conv_pool(pool2, [256], self.trainable, name='conv3', kernal_size=(3, 3),
+                                               conv_stride=(1, 1), padding='valid', dropout=self.dropout_rate,
+                                               pool=True, bn=False, activation=tf.nn.relu)
+            conv4, pool4 = self.conv_conv_pool(pool3, [256], self.trainable, name='conv4', kernal_size=(3, 3),
+                                               conv_stride=(1, 1), padding='valid', dropout=self.dropout_rate,
+                                               pool=True, bn=False, activation=tf.nn.relu)
+            conv5 = tf.layers.conv2d(pool4, 2, kernel_size=(3, 3), name='layerconv4')
+            flat = tf.reshape(conv5, shape=[self.bs, 19*19*2])
             return self.fc_fc(flat, [1], self.trainable, name='fc_final', activation=None, dropout=False)
 
     def create_graph(self, names, class_num, start_filter_num=32):
@@ -584,6 +587,15 @@ class SSAN_UNet(SSAN):
             if epoch % save_epoch == 0:
                 saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
                 saver.save(sess, '{}/model_{}.ckpt'.format(self.ckdir, epoch), global_step=self.global_step)
+
+    def test(self, x_name, sess, test_iterator):
+        result = []
+        for X_batch in test_iterator:
+            pred = sess.run(self.output, feed_dict={self.inputs[x_name]: X_batch,
+                                                    self.trainable: False})
+            result.append(np.concatenate([1-pred, pred], axis=-1))
+        result = np.vstack(result)
+        return result
 
     def run(self, train_reader=None, train_reader_source=None, train_reader_target=None, valid_reader=None,
             test_reader=None, pretrained_model_dir=None, layers2load=None, isTrain=False,
