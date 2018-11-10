@@ -435,7 +435,6 @@ class UnetModel(network.Network):
         return iou_return
 
 
-
 class UnetModelCrop(UnetModel):
     def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
                  learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
@@ -591,6 +590,325 @@ class UnetModelCrop(UnetModel):
                                n_valid=self.n_valid, train_reader=train_reader, valid_reader=valid_reader,
                                image_summary=util_functions.image_summary, img_mean=img_mean,
                                verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir, valid_iou=valid_iou)
+                finally:
+                    coord.request_stop()
+                    coord.join(threads)
+                    saver.save(sess, '{}/model.ckpt'.format(self.ckdir), global_step=self.global_step)
+        else:
+            if self.config is None:
+                self.config = tf.ConfigProto(allow_soft_placement=True)
+            pad = self.get_overlap()
+            with tf.Session(config=self.config) as sess:
+                init = tf.global_variables_initializer()
+                sess.run(init)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
+                self.model_name = pretrained_model_dir.split('/')[-1]
+                result = self.test('X', sess, test_reader)
+            image_pred = uabUtilreader.un_patchify_shrink(result,
+                                                          [tile_size[0] + pad, tile_size[1] + pad],
+                                                          tile_size,
+                                                          patch_size,
+                                                          [patch_size[0] - pad, patch_size[1] - pad],
+                                                          overlap=pad)
+            return util_functions.get_pred_labels(image_pred) * truth_val
+
+
+class UnetModelDTDA(UnetModelCrop):
+    def __init__(self, inputs, trainable, input_size, model_name='', dropout_rate=None,
+                 learn_rate=1e-4, decay_step=60, decay_rate=0.1, epochs=100,
+                 batch_size=5, start_filter_num=32):
+        network.Network.__init__(self, inputs, trainable, dropout_rate,
+                                 learn_rate, decay_step, decay_rate, epochs, batch_size)
+        self.name = 'UnetDTDA'
+        self.model_name = self.get_unique_name(model_name)
+        self.sfn = start_filter_num
+        self.learning_rate = None
+        self.valid_d_loss = tf.placeholder(tf.float32, [])
+        self.valid_g_loss = tf.placeholder(tf.float32, [])
+        self.update_ops = None
+        self.config = None
+        self.d_loss = None
+        self.g_loss = None
+
+        self.valid_iou = tf.placeholder(tf.float32, [])
+        self.valid_images = tf.placeholder(tf.uint8, shape=[None, input_size[0],
+                                                            input_size[1] * 3, 3], name='validation_images')
+
+    def create_graph(self, x_name, y_name, class_num):
+        self.dis_true, self.act_true, self.w_true, _, _ = \
+            self.create_sub_graph(self.inputs[x_name], class_num, 'real')
+        self.dis_fake, self.act_fake, self.w_fake, self.pred, self.output = \
+            self.create_sub_graph(self.inputs[x_name], class_num, 'fake', reuse=True)
+
+    def create_sub_graph(self, x, class_num, name, reuse=False):
+        with tf.variable_scope(name):
+            self.class_num = class_num
+            sfn = self.sfn
+
+            # downsample
+            conv1, pool1 = self.conv_conv_pool(x, [sfn, sfn], self.trainable, name='conv1',
+                                               padding='valid', dropout=self.dropout_rate)
+            conv2, pool2 = self.conv_conv_pool(pool1, [sfn*2, sfn*2], self.trainable, name='conv2',
+                                               padding='valid', dropout=self.dropout_rate)
+            conv3, pool3 = self.conv_conv_pool(pool2, [sfn*4, sfn*4], self.trainable, name='conv3',
+                                               padding='valid', dropout=self.dropout_rate)
+            conv4, pool4 = self.conv_conv_pool(pool3, [sfn*8, sfn*8], self.trainable, name='conv4',
+                                               padding='valid', dropout=self.dropout_rate)
+            conv5 = self.conv_conv_pool(pool4, [sfn*16, sfn*16], self.trainable, name='conv5', pool=False,
+                                        padding='valid', dropout=self.dropout_rate)
+
+            # upsample
+            up6 = self.crop_upsample_concat(conv5, conv4, 8, name='6')
+            conv6 = self.conv_conv_pool(up6, [sfn*8, sfn*8], self.trainable, name='up6', pool=False,
+                                        padding='valid', dropout=self.dropout_rate)
+            up7 = self.crop_upsample_concat(conv6, conv3, 32, name='7')
+            conv7 = self.conv_conv_pool(up7, [sfn*4, sfn*4], self.trainable, name='up7', pool=False,
+                                        padding='valid', dropout=self.dropout_rate)
+            up8 = self.crop_upsample_concat(conv7, conv2, 80, name='8')
+            conv8 = self.conv_conv_pool(up8, [sfn*2, sfn*2], self.trainable, name='up8', pool=False,
+                                        padding='valid', dropout=self.dropout_rate)
+            up9 = self.crop_upsample_concat(conv8, conv1, 176, name='9')
+            conv9 = self.conv_conv_pool(up9, [sfn, sfn], self.trainable, name='up9', pool=False,
+                                        padding='valid', dropout=self.dropout_rate)
+
+            pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
+            output = tf.nn.softmax(self.pred)
+
+        dis_1 = self.make_discriminator(conv2, '1', reuse=reuse)
+        dis_2 = self.make_discriminator(conv4, '2', reuse=reuse)
+        dis_3 = self.make_discriminator(conv6, '3', reuse=reuse)
+        dis_4 = self.make_discriminator(conv8, '4', reuse=reuse)
+        return [dis_1, dis_2, dis_3, dis_4], [pool1, pool2, pool3, pool4, conv5, conv6, conv7, conv8, conv9], \
+               [v for v in tf.trainable_variables() if 'kernel' in v.name or 'bias' in v.name], pred, output
+
+    def make_discriminator(self, input_, name, filter_list=(64, 128, 256, 512), reuse=False):
+        with tf.variable_scope('discriminator_{}'.format(name), reuse=reuse):
+            input_ = tf.layers.conv2d(input_, filter_list[0], (5, 5), (2, 2), name='conv0', padding='same')
+            input_ = tf.nn.leaky_relu(input_)
+            for i in range(1, len(filter_list)):
+                input_ = tf.layers.conv2d(input_, filter_list[i], (5, 5), (2, 2), name='conv{}'.format(i),
+                                          padding='same')
+                input_ = tf.layers.batch_normalization(input_)
+                input_ = tf.nn.leaky_relu(input_)
+            input_ = tf.layers.dense(input_, 1, activation=tf.nn.leaky_relu)
+        return input_
+
+    def make_loss(self, y_name, loss_type='xent', **kwargs):
+        # make l2 loss
+        with tf.variable_scope('l2_loss'):
+            l2_loss = []
+            for wt, wf in zip(self.w_true, self.w_fake):
+                l2_loss.append(tf.nn.l2_loss(wt - wf))
+            l2_loss = tf.reduce_sum(l2_loss)
+
+        # make jensen shannon loss
+        with tf.variable_scope('js_loss'):
+            dis_fake = tf.expand_dims(tf.add_n([tf.reduce_sum(a, [1, 2, 3]) for a in self.dis_fake]), axis=-1)
+            dis_true = tf.expand_dims(tf.add_n([tf.reduce_sum(a, [1, 2, 3]) for a in self.dis_true]), axis=-1)
+            g_loss = 1/2 * tf.reduce_sum(tf.square(dis_fake - tf.ones([self.bs, 1])))
+            self.g_loss = l2_loss + kwargs['lam'] * g_loss
+            self.d_loss = 1/2 * tf.reduce_sum(tf.square(dis_true - tf.ones([self.bs, 1]))) + \
+                          1/2 * tf.reduce_sum(tf.square(dis_fake))
+            '''g_loss = -0.5 * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
+                logits=dis_fake, labels=tf.zeros([self.bs, 1])
+            ))
+            d_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
+                logits=dis_true, labels=tf.ones([self.bs, 1])
+            ))
+            d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
+                logits=dis_fake, labels=tf.zeros([self.bs, 1])
+            ))
+            self.g_loss = l2_loss + kwargs['lam'] * g_loss
+            self.d_loss = 0.5 * d_loss_real + 0.5 * d_loss_fake'''
+
+        with tf.variable_scope('loss'):
+            pred_flat = tf.reshape(self.pred, [-1, self.class_num])
+            _, w, h, _ = self.inputs[y_name].get_shape().as_list()
+            y = tf.image.resize_image_with_crop_or_pad(self.inputs[y_name], w-self.get_overlap(), h-self.get_overlap())
+            y_flat = tf.reshape(tf.squeeze(y, axis=[3]), [-1, ])
+            indices = tf.squeeze(tf.where(tf.less_equal(y_flat, self.class_num - 1)), 1)
+            gt = tf.gather(y_flat, indices)
+            prediction = tf.gather(pred_flat, indices)
+
+            pred = tf.argmax(prediction, axis=-1, output_type=tf.int32)
+            intersect = tf.cast(tf.reduce_sum(gt * pred), tf.float32)
+            union = tf.cast(tf.reduce_sum(gt), tf.float32) + tf.cast(tf.reduce_sum(pred), tf.float32) \
+                    - tf.cast(tf.reduce_sum(gt * pred), tf.float32)
+            self.loss_iou = tf.convert_to_tensor([intersect, union])
+            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt))
+
+    def make_update_ops(self, x_name, y_name, z_name):
+        tf.add_to_collection('inputs', self.inputs[x_name])
+        tf.add_to_collection('inputs', self.inputs[y_name])
+        tf.add_to_collection('inputs', self.inputs[z_name])
+        tf.add_to_collection('outputs', self.pred)
+        self.update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+
+    def make_learning_rate(self, n_train):
+        self.learning_rate = tf.train.exponential_decay(self.lr, self.global_step,
+                                                        tf.cast(n_train/self.bs * self.ds, tf.int32),
+                                                        self.dr, staircase=True)
+
+    def make_optimizer(self, train_var_filter):
+        with tf.control_dependencies(self.update_ops):
+            t_vars = tf.trainable_variables()
+            g_vars = [var for var in t_vars if 'fake' in var.name]
+            d_vars = [var for var in t_vars if 'discriminator_' in var.name]
+            if train_var_filter is None:
+                g_optm = tf.train.AdamOptimizer(self.learning_rate).\
+                    minimize(self.g_loss, var_list=g_vars, global_step=self.global_step)
+                d_optm = tf.train.AdamOptimizer(self.learning_rate).\
+                    minimize(self.d_loss, var_list=d_vars, global_step=None)
+                self.optimizer = [g_optm, d_optm]
+
+    def make_summary(self, hist=False):
+        if hist:
+            tf.summary.histogram('Predicted Prob', tf.argmax(tf.nn.softmax(self.pred), 1))
+        tf.summary.scalar('Generator Loss', self.g_loss)
+        tf.summary.scalar('Discriminator Loss', self.d_loss)
+        tf.summary.scalar('learning rate', self.learning_rate)
+        self.summary = tf.summary.merge_all()
+
+    def make_ckdir(self, ckdir, patch_size, par_dir=None):
+        if type(patch_size) is list:
+            patch_size = patch_size[0]
+        # make unique directory for save
+        dir_name = '{}_PS{}_BS{}_EP{}_LR{}_DS{}_DR{}'.\
+            format(self.model_name, patch_size, self.bs, self.epochs, self.lr, self.ds, self.dr)
+        if par_dir is None:
+            self.ckdir = os.path.join(ckdir, dir_name)
+        else:
+            self.ckdir = os.path.join(ckdir, par_dir, dir_name)
+
+    def load_source_weights(self, weight_dict):
+        init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
+        with tf.Session() as sess:
+            sess.run(init)
+
+        train_vars = [v for v in tf.trainable_variables() if 'real' in v.name]
+        for v, (name, weight) in zip(train_vars, weight_dict.items()):
+            tf.assign(v, weight)
+
+        train_vars = [v for v in tf.trainable_variables() if 'fake' in v.name]
+        for v, (name, weight) in zip(train_vars, weight_dict.items()):
+            tf.assign(v, weight)
+
+        '''copy_dict = dict()
+        for name, weight in weight_dict.items():
+            if 'kernel' in name or 'bias' in name:
+                copy_dict[name] = weight
+        train_vars = [v for v in tf.trainable_variables() if 'fake' in v.name and
+                      ('kernel' in v.name or 'bias' in v.name)]
+        for v, (name, weight) in zip(train_vars, copy_dict.items()):
+            tf.assign(v, weight)'''
+
+    def train_config(self, x_name, y_name, z_name, n_train, n_valid, patch_size, ckdir, loss_type='xent',
+                     train_var_filter=None, hist=False, par_dir=None, **kwargs):
+        self.make_loss(y_name, loss_type, **kwargs)
+        self.make_learning_rate(n_train)
+        self.make_update_ops(x_name, y_name, z_name)
+        self.make_optimizer(train_var_filter)
+        self.make_ckdir(ckdir, patch_size, par_dir)
+        self.make_summary(hist)
+        self.config = tf.ConfigProto(allow_soft_placement=True)
+        self.n_train = n_train
+        self.n_valid = n_valid
+
+    def train(self, x_name, y_name, z_name, n_train, sess, summary_writer, n_valid=1000,
+              train_reader_source=None, train_reader_target=None, valid_reader=None, image_summary=None,
+              verb_step=100, save_epoch=5, img_mean=np.array((0, 0, 0), dtype=np.float32),
+              continue_dir=None, valid_iou=False):
+        valid_iou_summary_op = tf.summary.scalar('iou_validation', self.valid_iou)
+        valid_image_summary_op = tf.summary.image('Validation_images_summary', self.valid_images,
+                                                  max_outputs=10)
+
+        if continue_dir is not None and os.path.exists(continue_dir):
+            self.load(continue_dir, sess)
+            gs = sess.run(self.global_step)
+            start_epoch = int(np.ceil(gs/n_train*self.bs))
+            start_step = gs - int(start_epoch*n_train/self.bs)
+        else:
+            start_epoch = 0
+            start_step = 0
+
+        for epoch in range(start_epoch, self.epochs):
+            start_time = time.time()
+            for step in range(start_step, n_train, self.bs):
+                X_batch_source, _ = train_reader_source.readerAction(sess)
+                X_batch_target, _ = train_reader_target.readerAction(sess)
+                _, self.global_step_value = sess.run([self.optimizer, self.global_step],
+                                                     feed_dict={self.inputs[x_name]:X_batch_source,
+                                                                self.inputs[z_name]:X_batch_target,
+                                                                self.trainable: True})
+
+                if self.global_step_value % verb_step == 0 and self.global_step_value != 0:
+                    pred_train, step_g_loss, step_d_loss, step_summary = sess.run([self.pred, self.g_loss, self.d_loss, self.summary],
+                                                                            feed_dict={self.inputs[x_name]: X_batch_source,
+                                                                                       self.inputs[z_name]: X_batch_target,
+                                                                                       self.trainable: False})
+                    summary_writer.add_summary(step_summary, self.global_step_value)
+                    print('Epoch {:d} step {:d}\tg_loss = {:.3f}\td_loss = {:.3f}'.
+                          format(epoch, self.global_step_value, step_g_loss, step_d_loss))
+
+            # validation
+            iou_valid_mean = np.zeros(2)
+            for step in range(0, n_valid, self.bs):
+                X_batch_val, y_batch_val = valid_reader.readerAction(sess)
+                pred_valid, cross_entropy_valid, iou_valid = sess.run([self.pred, self.loss, self.loss_iou],
+                                                                      feed_dict={self.inputs[x_name]: X_batch_val,
+                                                                                 self.inputs[y_name]: y_batch_val,
+                                                                                 self.trainable: False})
+                iou_valid_mean += iou_valid
+            iou_valid_mean = iou_valid_mean[0] / iou_valid_mean[1]
+            duration = time.time() - start_time
+            print('Validation IoU: {:.3f}, duration: {:.3f}'.format(iou_valid_mean, duration))
+
+            valid_iou_summary = sess.run(valid_iou_summary_op,
+                                         feed_dict={self.valid_iou: iou_valid_mean})
+            summary_writer.add_summary(valid_iou_summary, self.global_step_value)
+
+            if image_summary is not None:
+                valid_image_summary = sess.run(valid_image_summary_op,
+                                               feed_dict={self.valid_images:
+                                                              image_summary(X_batch_val[:, :, :, :3], y_batch_val,
+                                                                            pred_valid,
+                                                                            img_mean)})
+                summary_writer.add_summary(valid_image_summary, self.global_step_value)
+
+            if epoch % save_epoch == 0:
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                saver.save(sess, '{}/model_{}.ckpt'.format(self.ckdir, epoch), global_step=self.global_step)
+
+    def run(self, train_reader_source=None, train_reader_target=None, valid_reader=None,
+            pretrained_model_dir=None, layers2load=None, isTrain=False,
+            img_mean=np.array((0, 0, 0), dtype=np.float32), verb_step=100, save_epoch=5, gpu=None,
+            tile_size=(5000, 5000), patch_size=(572, 572), truth_val=1, continue_dir=None, load_epoch_num=None,
+            valid_iou=False, best_model=True):
+        if gpu is not None:
+            os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+        if isTrain:
+            coord = tf.train.Coordinator()
+            with tf.Session(config=self.config) as sess:
+                # init model
+                init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
+                sess.run(init)
+                saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=1)
+                # load model
+                if pretrained_model_dir is not None:
+                    if layers2load is not None:
+                        self.load_weights(pretrained_model_dir, layers2load)
+                    else:
+                        self.load(pretrained_model_dir, sess, saver, epoch=load_epoch_num)
+                threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+                try:
+                    train_summary_writer = tf.summary.FileWriter(self.ckdir, sess.graph)
+                    self.train('X', 'Y', 'Z', self.n_train, sess, train_summary_writer,
+                               n_valid=self.n_valid, train_reader_source=train_reader_source,
+                               train_reader_target=train_reader_target, valid_reader=valid_reader,
+                               image_summary=util_functions.image_summary, img_mean=img_mean,
+                               verb_step=verb_step, save_epoch=save_epoch, continue_dir=continue_dir,
+                               valid_iou=valid_iou)
                 finally:
                     coord.request_stop()
                     coord.join(threads)
