@@ -672,7 +672,7 @@ class UnetModelDTDA(UnetModelCrop):
                                         padding='valid', dropout=self.dropout_rate)
 
             pred = tf.layers.conv2d(conv9, class_num, (1, 1), name='final', activation=None, padding='same')
-            output = tf.nn.softmax(self.pred)
+            output = tf.nn.softmax(pred)
 
         dis_1 = self.make_discriminator(conv2, '1', reuse=reuse)
         dis_2 = self.make_discriminator(conv4, '2', reuse=reuse)
@@ -781,17 +781,63 @@ class UnetModelDTDA(UnetModelCrop):
             self.ckdir = os.path.join(ckdir, par_dir, dir_name)
 
     def load_source_weights(self, weight_dict):
-        init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
+        layer_list = []
+        for layer_id in range(1, 10):
+            if layer_id <= 5:
+                prefix = 'layerconv'
+            else:
+                prefix = 'layerup'
+            layer_list.append('{}{}'.format(prefix, layer_id))
+        layer_list.append('final')
+
+        load_dict = {}
+        for layer_name in layer_list:
+            feed_layer = layer_name + '/'
+            load_dict[feed_layer] = 'real/' + feed_layer
+
+        try:
+            latest_check_point = tf.train.latest_checkpoint(weight_dict)
+            tf.train.init_from_checkpoint(weight_dict, load_dict)
+            print('loaded {}'.format(latest_check_point))
+        except tf.errors.NotFoundError:
+            with open(os.path.join(weight_dict, 'checkpoint'), 'r') as f:
+                ckpts = f.readlines()
+            ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
+            latest_check_point = os.path.join(weight_dict, ckpt_file_name)
+            tf.train.init_from_checkpoint(latest_check_point, load_dict)
+            print('loaded {}'.format(latest_check_point))
+
+        load_dict = {}
+        for layer_name in layer_list:
+            feed_layer = layer_name + '/'
+            load_dict[feed_layer] = 'fake/' + feed_layer
+
+        try:
+            latest_check_point = tf.train.latest_checkpoint(weight_dict)
+            tf.train.init_from_checkpoint(weight_dict, load_dict)
+            print('loaded {}'.format(latest_check_point))
+        except tf.errors.NotFoundError:
+            with open(os.path.join(weight_dict, 'checkpoint'), 'r') as f:
+                ckpts = f.readlines()
+            ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
+            latest_check_point = os.path.join(weight_dict, ckpt_file_name)
+            tf.train.init_from_checkpoint(latest_check_point, load_dict)
+            print('loaded {}'.format(latest_check_point))
+
+        '''init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
         with tf.Session() as sess:
             sess.run(init)
 
-        train_vars = [v for v in tf.trainable_variables() if 'real' in v.name]
+        train_vars = [v for v in tf.global_variables() if 'real' in v.name]
+
         for v, (name, weight) in zip(train_vars, weight_dict.items()):
+            print(v.name, name)
             tf.assign(v, weight)
 
-        train_vars = [v for v in tf.trainable_variables() if 'fake' in v.name]
+        train_vars = [v for v in tf.global_variables() if 'fake' in v.name]
         for v, (name, weight) in zip(train_vars, weight_dict.items()):
-            tf.assign(v, weight)
+            print(v.name, name)
+            tf.assign(v, weight)'''
 
         '''copy_dict = dict()
         for name, weight in weight_dict.items():
@@ -920,9 +966,9 @@ class UnetModelDTDA(UnetModelCrop):
             with tf.Session(config=self.config) as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
-                self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
+                #self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
                 self.model_name = pretrained_model_dir.split('/')[-1]
-                result = self.test('X', sess, test_reader)
+                result = self.test('X', sess, valid_reader)
             image_pred = uabUtilreader.un_patchify_shrink(result,
                                                           [tile_size[0] + pad, tile_size[1] + pad],
                                                           tile_size,
@@ -930,6 +976,97 @@ class UnetModelDTDA(UnetModelCrop):
                                                           [patch_size[0] - pad, patch_size[1] - pad],
                                                           overlap=pad)
             return util_functions.get_pred_labels(image_pred) * truth_val
+
+    def evaluate(self, rgb_list, gt_list, rgb_dir, gt_dir, input_size, tile_size, batch_size, img_mean,
+                 model_dir, gpu=None, save_result=True, save_result_parent_dir=None, show_figure=False,
+                 verb=True, ds_name='default', load_epoch_num=None, best_model=True):
+        if show_figure:
+            import matplotlib.pyplot as plt
+
+        if save_result:
+            self.model_name = model_dir.split('/')[-1]
+            if save_result_parent_dir is None:
+                score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
+            else:
+                score_save_dir = os.path.join(uabRepoPaths.evalPath, save_result_parent_dir,
+                                              self.model_name, ds_name)
+            if not os.path.exists(score_save_dir):
+                os.makedirs(score_save_dir)
+            with open(os.path.join(score_save_dir, 'result.txt'), 'w'):
+                pass
+
+        iou_record = []
+        iou_return = {}
+        for file_name, file_name_truth in zip(rgb_list, gt_list):
+            tile_name = file_name_truth.split('_')[0]
+            if verb:
+                print('Evaluating {} ... '.format(tile_name))
+            start_time = time.time()
+
+            # prepare the reader
+            reader = uabDataReader.ImageLabelReader(gtInds=[0],
+                                                    dataInds=[0],
+                                                    nChannels=3,
+                                                    parentDir=rgb_dir,
+                                                    chipFiles=[file_name],
+                                                    chip_size=input_size,
+                                                    tile_size=tile_size,
+                                                    batchSize=batch_size,
+                                                    block_mean=img_mean,
+                                                    overlap=self.get_overlap(),
+                                                    padding=np.array((self.get_overlap()/2, self.get_overlap()/2)),
+                                                    isTrain=False)
+            rManager = reader.readManager
+
+            # run the model
+            pred = self.run(pretrained_model_dir=model_dir,
+                            valid_reader=rManager,
+                            tile_size=tile_size,
+                            patch_size=input_size,
+                            gpu=gpu, load_epoch_num=load_epoch_num, best_model=best_model)
+
+            truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
+            iou = util_functions.iou_metric(truth_label_img, pred, divide_flag=True)
+            iou_record.append(iou)
+            iou_return[tile_name] = iou
+
+            duration = time.time() - start_time
+            if verb:
+                print('{} mean IoU={:.3f}, duration: {:.3f}'.format(tile_name, iou[0]/iou[1], duration))
+
+            # save results
+            if save_result:
+                pred_save_dir = os.path.join(score_save_dir, 'pred')
+                if not os.path.exists(pred_save_dir):
+                    os.makedirs(pred_save_dir)
+                imageio.imsave(os.path.join(pred_save_dir, tile_name+'.png'), pred.astype(np.uint8))
+                with open(os.path.join(score_save_dir, 'result.txt'), 'a+') as file:
+                    file.write('{} {}\n'.format(tile_name, iou))
+
+            if show_figure:
+                plt.figure(figsize=(12, 4))
+                ax1 = plt.subplot(121)
+                ax1.imshow(truth_label_img)
+                plt.title('Truth')
+                ax2 = plt.subplot(122, sharex=ax1, sharey=ax1)
+                ax2.imshow(pred)
+                plt.title('pred')
+                plt.suptitle('{} Results on {} IoU={:3f}'.format(self.model_name, file_name_truth.split('_')[0], iou[0]/iou[1]))
+                plt.show()
+
+        iou_record = np.array(iou_record)
+        mean_iou = np.sum(iou_record[:, 0]) / np.sum(iou_record[:, 1])
+        print('Overall mean IoU={:.3f}'.format(mean_iou))
+        if save_result:
+            if save_result_parent_dir is None:
+                score_save_dir = os.path.join(uabRepoPaths.evalPath, self.model_name, ds_name)
+            else:
+                score_save_dir = os.path.join(uabRepoPaths.evalPath, save_result_parent_dir, self.model_name,
+                                              ds_name)
+            with open(os.path.join(score_save_dir, 'result.txt'), 'a+') as file:
+                file.write('{}'.format(mean_iou))
+
+        return iou_return
 
 
 class UnetModelPredict(UnetModelCrop):
