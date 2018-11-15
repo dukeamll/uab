@@ -780,7 +780,9 @@ class UnetModelDTDA(UnetModelCrop):
         else:
             self.ckdir = os.path.join(ckdir, par_dir, dir_name)
 
-    def load_source_weights(self, model_dir, shift_dict):
+    def load_source_weights(self, model_dir, shift_dict, gpu):
+        os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
         layer_list = []
         for layer_id in range(1, 10):
             if layer_id <= 5:
@@ -842,7 +844,8 @@ class UnetModelDTDA(UnetModelCrop):
                         shift_entry = 'f_{}_{}'.format(layer_cnt, c)
                         new_kernel[:, :, :, c] = (val[:, :, :, c] * shift_dict[shift_entry][0] -
                                                   shift_dict[shift_entry][1]) + shift_dict[shift_entry][2]
-                        sess.run(v.assign(new_kernel))
+                    sess.run(v.assign(new_kernel))
+                    print('Loaded conv_kernel_{}'.format(cnt))
                 else:
                     # bias kernel
                     new_kernel = np.zeros_like(val)
@@ -851,7 +854,8 @@ class UnetModelDTDA(UnetModelCrop):
                         shift_entry = 'f_{}_{}'.format(layer_cnt, c)
                         new_kernel[c] = (val[c] * shift_dict[shift_entry][0] - shift_dict[shift_entry][1]) + \
                                         shift_dict[shift_entry][2]
-                        sess.run(v.assign(new_kernel))
+                    sess.run(v.assign(new_kernel))
+                    print('Loaded conv_bias_{}'.format(cnt))
 
 
     def train_config(self, x_name, y_name, z_name, n_train, n_valid, patch_size, ckdir, loss_type='xent',
