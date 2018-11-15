@@ -705,10 +705,10 @@ class UnetModelDTDA(UnetModelCrop):
         with tf.variable_scope('js_loss'):
             dis_fake = tf.expand_dims(tf.add_n([tf.reduce_sum(a, [1, 2, 3]) for a in self.dis_fake]), axis=-1)
             dis_true = tf.expand_dims(tf.add_n([tf.reduce_sum(a, [1, 2, 3]) for a in self.dis_true]), axis=-1)
-            g_loss = 1/2 * tf.reduce_sum(tf.square(dis_fake - tf.ones([self.bs, 1])))
+            g_loss = 1/2 * tf.reduce_mean(tf.square(dis_fake - tf.ones([self.bs, 1])))
             self.g_loss = l2_loss + kwargs['lam'] * g_loss
-            self.d_loss = 1/2 * tf.reduce_sum(tf.square(dis_true - tf.ones([self.bs, 1]))) + \
-                          1/2 * tf.reduce_sum(tf.square(dis_fake))
+            self.d_loss = 1/2 * tf.reduce_mean(tf.square(dis_true - tf.ones([self.bs, 1]))) + \
+                          1/2 * tf.reduce_mean(tf.square(dis_fake))
             '''g_loss = -0.5 * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
                 logits=dis_fake, labels=tf.zeros([self.bs, 1])
             ))
@@ -780,7 +780,7 @@ class UnetModelDTDA(UnetModelCrop):
         else:
             self.ckdir = os.path.join(ckdir, par_dir, dir_name)
 
-    def load_source_weights(self, weight_dict):
+    def load_source_weights(self, model_dir, shift_dict):
         layer_list = []
         for layer_id in range(1, 10):
             if layer_id <= 5:
@@ -790,63 +790,69 @@ class UnetModelDTDA(UnetModelCrop):
             layer_list.append('{}{}'.format(prefix, layer_id))
         layer_list.append('final')
 
+        # load source domain weights
         load_dict = {}
         for layer_name in layer_list:
             feed_layer = layer_name + '/'
             load_dict[feed_layer] = 'real/' + feed_layer
 
         try:
-            latest_check_point = tf.train.latest_checkpoint(weight_dict)
-            tf.train.init_from_checkpoint(weight_dict, load_dict)
+            latest_check_point = tf.train.latest_checkpoint(model_dir)
+            tf.train.init_from_checkpoint(model_dir, load_dict)
             print('loaded {}'.format(latest_check_point))
         except tf.errors.NotFoundError:
-            with open(os.path.join(weight_dict, 'checkpoint'), 'r') as f:
+            with open(os.path.join(model_dir, 'checkpoint'), 'r') as f:
                 ckpts = f.readlines()
             ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
-            latest_check_point = os.path.join(weight_dict, ckpt_file_name)
+            latest_check_point = os.path.join(model_dir, ckpt_file_name)
             tf.train.init_from_checkpoint(latest_check_point, load_dict)
             print('loaded {}'.format(latest_check_point))
 
+        # load target domain weights
         load_dict = {}
         for layer_name in layer_list:
             feed_layer = layer_name + '/'
             load_dict[feed_layer] = 'fake/' + feed_layer
 
         try:
-            latest_check_point = tf.train.latest_checkpoint(weight_dict)
-            tf.train.init_from_checkpoint(weight_dict, load_dict)
+            latest_check_point = tf.train.latest_checkpoint(model_dir)
+            tf.train.init_from_checkpoint(model_dir, load_dict)
             print('loaded {}'.format(latest_check_point))
         except tf.errors.NotFoundError:
-            with open(os.path.join(weight_dict, 'checkpoint'), 'r') as f:
+            with open(os.path.join(model_dir, 'checkpoint'), 'r') as f:
                 ckpts = f.readlines()
             ckpt_file_name = ckpts[0].split('/')[-1].strip().strip('\"')
-            latest_check_point = os.path.join(weight_dict, ckpt_file_name)
+            latest_check_point = os.path.join(model_dir, ckpt_file_name)
             tf.train.init_from_checkpoint(latest_check_point, load_dict)
             print('loaded {}'.format(latest_check_point))
 
-        '''init = [tf.global_variables_initializer(), tf.local_variables_initializer()]
+        var_list = [v for v in tf.trainable_variables() if 'fake' in v.name and 'gamma' not in v.name
+                    and 'beta' not in v.name]
         with tf.Session() as sess:
+            init = tf.global_variables_initializer()
             sess.run(init)
+            for cnt, v in enumerate(var_list):
+                layer_cnt = cnt // 2
+                val = sess.run(v)
+                if cnt % 2 == 0:
+                    # conv kernel
+                    new_kernel = np.zeros_like(val)
+                    chan_range = v.shape[-1]
+                    for c in range(chan_range):
+                        shift_entry = 'f_{}_{}'.format(layer_cnt, c)
+                        new_kernel[:, :, :, c] = (val[:, :, :, c] * shift_dict[shift_entry][0] -
+                                                  shift_dict[shift_entry][1]) + shift_dict[shift_entry][2]
+                        sess.run(v.assign(new_kernel))
+                else:
+                    # bias kernel
+                    new_kernel = np.zeros_like(val)
+                    chan_range = v.shape[-1]
+                    for c in range(chan_range):
+                        shift_entry = 'f_{}_{}'.format(layer_cnt, c)
+                        new_kernel[c] = (val[c] * shift_dict[shift_entry][0] - shift_dict[shift_entry][1]) + \
+                                        shift_dict[shift_entry][2]
+                        sess.run(v.assign(new_kernel))
 
-        train_vars = [v for v in tf.global_variables() if 'real' in v.name]
-
-        for v, (name, weight) in zip(train_vars, weight_dict.items()):
-            print(v.name, name)
-            tf.assign(v, weight)
-
-        train_vars = [v for v in tf.global_variables() if 'fake' in v.name]
-        for v, (name, weight) in zip(train_vars, weight_dict.items()):
-            print(v.name, name)
-            tf.assign(v, weight)'''
-
-        '''copy_dict = dict()
-        for name, weight in weight_dict.items():
-            if 'kernel' in name or 'bias' in name:
-                copy_dict[name] = weight
-        train_vars = [v for v in tf.trainable_variables() if 'fake' in v.name and
-                      ('kernel' in v.name or 'bias' in v.name)]
-        for v, (name, weight) in zip(train_vars, copy_dict.items()):
-            tf.assign(v, weight)'''
 
     def train_config(self, x_name, y_name, z_name, n_train, n_valid, patch_size, ckdir, loss_type='xent',
                      train_var_filter=None, hist=False, par_dir=None, **kwargs):
