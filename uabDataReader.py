@@ -121,7 +121,7 @@ class ImageLabelReader(object):
                     block -= self.block_mean
 
                 if dataAug != '':
-                    augDat = uabUtilreader.doDataAug(block, nDims, dataAug, img_mean=self.block_mean)
+                    augDat = uabUtilreader.doDataAug(block, nDims, dataAug, img_mean=self.block_mean, is_np=True)
                 else:
                     augDat = block
             

@@ -845,7 +845,7 @@ class UnetModelDTDA(UnetModelCrop):
                         new_kernel[:, :, :, c] = (val[:, :, :, c] * shift_dict[shift_entry][0] -
                                                   shift_dict[shift_entry][1]) + shift_dict[shift_entry][2]
                     sess.run(v.assign(new_kernel))
-                    print('Loaded conv_kernel_{}'.format(cnt))
+                    print('Loaded conv_kernel_{}, l2={:.3f}'.format(cnt, np.sum(np.square(val - new_kernel))))
                 else:
                     # bias kernel
                     new_kernel = np.zeros_like(val)
@@ -855,7 +855,7 @@ class UnetModelDTDA(UnetModelCrop):
                         new_kernel[c] = (val[c] * shift_dict[shift_entry][0] - shift_dict[shift_entry][1]) + \
                                         shift_dict[shift_entry][2]
                     sess.run(v.assign(new_kernel))
-                    print('Loaded conv_bias_{}'.format(cnt))
+                    print('Loaded conv_bias_{}, l2={:.3f}'.format(cnt, np.mean(np.square(val - new_kernel))))
 
 
     def train_config(self, x_name, y_name, z_name, n_train, n_valid, patch_size, ckdir, loss_type='xent',
