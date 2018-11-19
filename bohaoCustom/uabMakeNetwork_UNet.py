@@ -976,7 +976,7 @@ class UnetModelDTDA(UnetModelCrop):
             with tf.Session(config=self.config) as sess:
                 init = tf.global_variables_initializer()
                 sess.run(init)
-                #self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
+                self.load(pretrained_model_dir, sess, epoch=load_epoch_num, best_model=best_model)
                 self.model_name = pretrained_model_dir.split('/')[-1]
                 result = self.test('X', sess, valid_reader)
             image_pred = uabUtilreader.un_patchify_shrink(result,
