@@ -49,6 +49,7 @@ class ImageLabelReader(object):
                 chipFiles = file.readlines()
             
             chipFiles = [a.strip().split(' ') for a in chipFiles]
+        self.chip_files = chipFiles
         
         if(nChannels is not list):
             self.nChannels = [nChannels for a in range(len(chipFiles[0]))]

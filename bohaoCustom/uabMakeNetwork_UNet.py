@@ -368,6 +368,9 @@ class UnetModel(network.Network):
             if verb:
                 print('Evaluating {} ... '.format(tile_name))
             start_time = time.time()
+            truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
+            if tile_size is None:
+                tile_size = truth_label_img.shape[:2]
 
             # prepare the reader
             reader = uabDataReader.ImageLabelReader(gtInds=[0],
@@ -391,7 +394,6 @@ class UnetModel(network.Network):
                             patch_size=input_size,
                             gpu=gpu, load_epoch_num=load_epoch_num, best_model=best_model)
 
-            truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
             iou = util_functions.iou_metric(truth_label_img, pred, divide_flag=True)
             iou_record.append(iou)
             iou_return[tile_name] = iou
@@ -410,7 +412,7 @@ class UnetModel(network.Network):
                     file.write('{} {}\n'.format(tile_name, iou))
 
             if show_figure:
-                plt.figure(figsize=(12, 4))
+                plt.figure(figsize=(12, 6))
                 ax1 = plt.subplot(121)
                 ax1.imshow(truth_label_img)
                 plt.title('Truth')
@@ -418,6 +420,7 @@ class UnetModel(network.Network):
                 ax2.imshow(pred)
                 plt.title('pred')
                 plt.suptitle('{} Results on {} IoU={:3f}'.format(self.model_name, file_name_truth.split('_')[0], iou[0]/iou[1]))
+                plt.tight_layout()
                 plt.show()
 
         iou_record = np.array(iou_record)

@@ -171,7 +171,8 @@ def get_pred_labels(pred):
 def decode_labels(label):
     n, h, w, c = label.shape
     outputs = np.zeros((n, h, w, 3), dtype=np.uint8)
-    label_colors = {0: (255, 255, 255), 1: (0, 0, 255), 2: (0, 255, 255)}
+    label_colors = {0: (255, 255, 255), 1: (0, 0, 255), 2: (0, 255, 255), 3: (255, 0, 0),
+                    4: (255, 255, 0), 5:(0, 255, 0)}
     for i in range(n):
         pixels = np.zeros((h, w, 3), dtype=np.uint8)
         for j in range(h):
