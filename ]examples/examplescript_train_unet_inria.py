@@ -34,7 +34,7 @@ start_filter_num = 32           # the number of filters at the first layer
 n_train = 8000                  # number of samples per epoch
 n_valid = 1000                  # number of samples every validation step
 model_name = 'inria_aug'        # a suffix for model name
-GPU = 1                         # which gpu to use, remember to set to None if you don't know which one to use
+GPU = 0                         # which gpu to use, remember to set to None if you don't know which one to use
 
 # make network
 # define place holder
@@ -42,7 +42,7 @@ X = tf.placeholder(tf.float32, shape=[None, chip_size[0], chip_size[1], 3], name
 y = tf.placeholder(tf.int32, shape=[None, chip_size[0], chip_size[1], 1], name='y')
 mode = tf.placeholder(tf.bool, name='mode')         # This controls if you'll update weights or not
                                                     # Set this True when training
-model = uabMakeNetwork_UNet.UnetModelCrop({'X':X, 'Y':y},
+model = uabMakeNetwork_UNet.UnetModelCrop({'X': X, 'Y': y},
                                           trainable=mode,                       # control if you're training or not
                                           input_size=chip_size,                 # input size to NN, same as extracted
                                                                                 # patch size
