@@ -9,6 +9,7 @@ class that handles the reading and iterating over files to be compatible with te
 call readerAction() to get your data for training/testing [whether it's a queue or reader is handled internally]
 """
 
+import skimage.transform
 import scipy.misc, os
 import numpy as np
 import tensorflow as tf
@@ -149,6 +150,10 @@ class ImageLabelReader(object):
                 nDims += img.shape[2]
                 blockList.append(img)
             block = np.dstack(blockList).astype(np.float32)
+
+            if not np.all([np.array(tile_dim) == block.shape[:2]]):
+                block = skimage.transform.resize(block, tile_dim, order=0, preserve_range=True, mode='reflect')
+
             if self.block_mean is not None:
                 block -= self.block_mean
         
