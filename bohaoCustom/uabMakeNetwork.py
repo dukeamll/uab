@@ -60,7 +60,7 @@ class Network(object):
                         saver.restore(sess, latest_check_point)
                         print('loaded {}'.format(latest_check_point))
                     except (tf.errors.NotFoundError, ValueError):
-                        saver = tf.train.Saver(var_list=[i for i in tf.get_collection(tf.GraphKeys.VARIABLES)
+                        saver = tf.train.Saver(var_list=[i for i in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
                                                          if 'save' not in i.name])
                         with open(os.path.join(model_path, 'checkpoint'), 'r') as f:
                             ckpts = f.readlines()
