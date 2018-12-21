@@ -131,7 +131,16 @@ class uabCollection(object):
             #this file doesn't exist & the RGB mapping hasn't happened yet so call that here.  If there are additional files to RGB, those remained in Original_Tiles until futher notice and should be specified as such here
             #(1) get all the extensions in the original directory
             allFileTypes = glob.glob(os.path.join(self.imDirectory, uabCollection.dataDirnames['data'], uabCollection.colDirnames['orig'],  self.tileList[0]+'*'))
+
+            # make RGB channel at the first place
             exts = list(set([a.split('_')[-1] for a in allFileTypes]))
+            for ext_ in exts:
+                if 'RGB' in ext_ or 'rgb' in ext_:
+                    idx = exts.index(ext_)
+                    exts[0], exts[idx] = exts[idx], exts[0]
+                    break
+            # reorder the rest list
+            exts[1:] = sorted(exts[1:])
             
             self.extensions = {}
             for ext in exts:
