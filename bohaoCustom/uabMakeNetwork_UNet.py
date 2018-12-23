@@ -370,7 +370,7 @@ class UnetModel(network.Network):
             start_time = time.time()
             truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
             if tile_size is None:
-                tile_size = truth_label_img.shape[:2]
+                tile_size_temp = truth_label_img.shape[:2]
 
             # prepare the reader
             reader = uabDataReader.ImageLabelReader(gtInds=[0],
@@ -379,7 +379,7 @@ class UnetModel(network.Network):
                                                     parentDir=rgb_dir,
                                                     chipFiles=[file_name],
                                                     chip_size=input_size,
-                                                    tile_size=tile_size,
+                                                    tile_size=tile_size_temp,
                                                     batchSize=batch_size,
                                                     block_mean=img_mean,
                                                     overlap=self.get_overlap(),
@@ -390,7 +390,7 @@ class UnetModel(network.Network):
             # run the model
             pred = self.run(pretrained_model_dir=model_dir,
                             test_reader=rManager,
-                            tile_size=tile_size,
+                            tile_size=tile_size_temp,
                             patch_size=input_size,
                             gpu=gpu, load_epoch_num=load_epoch_num, best_model=best_model)
 
