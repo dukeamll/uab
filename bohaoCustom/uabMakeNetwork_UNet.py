@@ -371,8 +371,11 @@ class UnetModel(network.Network):
             truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
             if tile_size is None:
                 tile_size_temp = truth_label_img.shape[:2]
+            else:
+                tile_size_temp = tile_size
 
             # prepare the reader
+            print(tile_size_temp)
             reader = uabDataReader.ImageLabelReader(gtInds=[0],
                                                     dataInds=[0],
                                                     nChannels=3,
