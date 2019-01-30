@@ -9,6 +9,8 @@ This file show examples of following steps:
     5. Train a UNet on those patches
 """
 
+import sys
+sys.path.append('/home/lab/Documents/bohao/code/uab')
 import os
 import time
 import numpy as np

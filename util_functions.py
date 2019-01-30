@@ -72,7 +72,7 @@ def uabUtilAllTypeLoad(fileName):
         
         return outP
     except Exception: # so many things could go wrong, can't be more specific.
-        raise IOError('Problem loading this data tile')
+        raise IOError('Problem loading this data tile {}'.format(fileName))
 
 def uabUtilAllTypeSave(fileName, variable_to_save):
     #handles the loading of a file of all types in python

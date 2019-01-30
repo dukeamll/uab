@@ -375,7 +375,6 @@ class UnetModel(network.Network):
                 tile_size_temp = tile_size
 
             # prepare the reader
-            print(tile_size_temp)
             reader = uabDataReader.ImageLabelReader(gtInds=[0],
                                                     dataInds=[0],
                                                     nChannels=3,
@@ -1018,6 +1017,11 @@ class UnetModelDTDA(UnetModelCrop):
             if verb:
                 print('Evaluating {} ... '.format(tile_name))
             start_time = time.time()
+            truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
+            if tile_size is None:
+                tile_size_temp = truth_label_img.shape[:2]
+            else:
+                tile_size_temp = tile_size
 
             # prepare the reader
             reader = uabDataReader.ImageLabelReader(gtInds=[0],
@@ -1026,7 +1030,7 @@ class UnetModelDTDA(UnetModelCrop):
                                                     parentDir=rgb_dir,
                                                     chipFiles=[file_name],
                                                     chip_size=input_size,
-                                                    tile_size=tile_size,
+                                                    tile_size=tile_size_temp,
                                                     batchSize=batch_size,
                                                     block_mean=img_mean,
                                                     overlap=self.get_overlap(),
@@ -1037,11 +1041,10 @@ class UnetModelDTDA(UnetModelCrop):
             # run the model
             pred = self.run(pretrained_model_dir=model_dir,
                             valid_reader=rManager,
-                            tile_size=tile_size,
+                            tile_size=tile_size_temp,
                             patch_size=input_size,
                             gpu=gpu, load_epoch_num=load_epoch_num, best_model=best_model)
 
-            truth_label_img = imageio.imread(os.path.join(gt_dir, file_name_truth))
             iou = util_functions.iou_metric(truth_label_img, pred, divide_flag=True)
             iou_record.append(iou)
             iou_return[tile_name] = iou
